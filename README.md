@@ -96,8 +96,6 @@ Follow these steps to set up and run the project on your local machine for devel
     pip install -r requirements.txt
     ```
 
-    _(This file should contain `fastapi`, `uvicorn[standard]`, `jinja2`, `supabase`, `python-dotenv`)_
-
 5.  **Create the environment variables file:**
 
     - Create a file named `.env` in the root directory of the project.
@@ -130,7 +128,7 @@ Follow these steps to set up and run the project on your local machine for devel
   uvicorn main:app --reload --host 0.0.0.0 --port 8000
   ```
 
-  _(Remember to adjust `main:app` if needed)_. The `--reload` flag automatically restarts the server when code changes are detected.
+  The `--reload` flag automatically restarts the server when code changes are detected.
 
 - **Linting (with Ruff):**
 
@@ -192,4 +190,4 @@ This is the initial Minimum Viable Product phase. Core functionalities are being
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details (assuming a standard MIT license file exists or will be created).
+This project is licensed under the MIT License.
