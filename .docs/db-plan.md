@@ -12,8 +12,6 @@ CREATE TYPE public.rule_type_enum AS ENUM ('time', 'clicks');
 CREATE TYPE public.target_type_enum AS ENUM ('url', 'html');
 ```
 
-````
-
 ## 2. Tables
 
 ### 2.1. `routr_links`
@@ -190,4 +188,7 @@ CREATE POLICY "Allow user full access on rules of own links"
 - **User Deletion Cascade:** The `ON DELETE CASCADE` for `routr_links.user_id` referencing `auth.users` is commented out as Supabase Auth deletion doesn't automatically trigger standard PostgreSQL cascades on public tables. This logic needs to be implemented via a **Supabase Edge Function** triggered by user deletion events.
 - **HTML Size Limit:** A specific `CHECK` constraint for the length of `routing_rules.target_value` when `target_type` is 'html' should be added once a definitive limit is decided.
 - **Click Count Atomicity:** The backend application logic _must_ ensure that updates to `total_clicks` and `current_clicks` are performed using atomic operations (e.g., `UPDATE table SET counter = counter + 1 WHERE ...`) to prevent race conditions under concurrent load.
-````
+
+```
+
+```
