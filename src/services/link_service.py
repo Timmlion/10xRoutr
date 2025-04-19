@@ -5,15 +5,19 @@ from uuid import UUID
 from typing import List, Optional, Tuple
 from supabase import AsyncClient
 from postgrest.exceptions import APIError as PostgrestAPIError
-from postgrest.types import CountMethod  # <<< DODANO IMPORT
+from postgrest.types import CountMethod
 
-# Import niestandardowych wyjątków
+# Importuj WSZYSTKIE wyjątki biznesowe, które mogą być rzucane przez ten serwis
 from src.services.custom_exceptions import (
     AliasConflictException,
     DatabaseException,
     NotFoundException,
-    ServiceException,
+    ValidationException,  # Choć nie jest rzucany bezpośrednio tutaj, może być w przyszłości
+    ServiceException,  # Bazowy
 )
+
+# Importuj wyjątki, które mogą być rzucone przez inne serwisy, jeśli je łapiesz
+# (w tym przypadku nie dotyczy)
 
 # Import modeli Pydantic (DTOs)
 from src.schemas.link import LinkCreate, LinkUpdate, LinkResponse, PaginatedLinkResponse
@@ -21,6 +25,9 @@ from src.schemas.stats import LinkStatsResponse, TargetClickStat
 from src.schemas.enums import TargetTypeEnum
 
 POSTGRES_UNIQUE_VIOLATION_CODE = "23505"
+ROUTING_RULES_LINK_ID_PRIORITY_KEY = (
+    "routing_rules_link_id_priority_key"  # Potencjalnie potrzebne w RuleService
+)
 
 
 class LinkService:
@@ -33,6 +40,55 @@ class LinkService:
         self.supabase = supabase_client
         self.links_table = "routr_links"
         self.rules_table = "routing_rules"
+
+    def _handle_db_error(self, error: Exception, context: str):
+        """
+        Handles potential database errors, raising specific custom exceptions.
+        It re-raises known business exceptions and wraps others.
+        """
+        # ... (sprawdzanie wyjątków biznesowych bez zmian) ...
+
+        if isinstance(error, PostgrestAPIError):
+            error_code = getattr(error, "code", None)
+            error_message = getattr(error, "message", "")
+            error_details = getattr(error, "details", "")
+            error_status = getattr(error, "status", "N/A")
+
+            print(
+                f"[ERROR] PostgrestAPIError during {context}: Status={error_status}, Code={error_code}, Message='{error_message}' Details='{error_details}'"
+            )
+
+            if error_code == POSTGRES_UNIQUE_VIOLATION_CODE:
+                # <<< POPRAWKA: Uproszczone wykrywanie konfliktu aliasu >>>
+                # Jeśli kod to 23505 i komunikat/szczegóły zawierają 'alias',
+                # zakładamy, że to konflikt aliasu w tym serwisie.
+                mentions_alias = "alias" in error_details or "alias" in error_message
+                if mentions_alias:
+                    print(
+                        f"[CONFLICT] Alias conflict likely detected during {context}."
+                    )
+                    raise AliasConflictException() from error
+                else:
+                    # Inne naruszenie unikalności
+                    print(
+                        f"[ERROR] Unique constraint violation (other) during {context}: {error_details or error_message}"
+                    )
+                    raise DatabaseException(
+                        detail=f"Unique constraint violation during {context}: {error_details or error_message}"
+                    ) from error
+            # Inne błędy Postgrest
+            raise DatabaseException(
+                detail=f"Database API error during {context}: {error_message}"
+            ) from error
+        else:
+            # Inne, nieoczekiwane błędy (niebędące wyjątkami biznesowymi ani PostgrestAPIError)
+            # np. błędy sieciowe na niższym poziomie, błędy w logice Python itp.
+            print(f"[ERROR] Unexpected error during {context}:")
+            traceback.print_exc()  # Drukuj pełny traceback dla tych błędów
+            # Rzuć ogólny DatabaseException lub ServiceException
+            raise DatabaseException(
+                detail=f"An unexpected error occurred during {context}."
+            ) from error
 
     async def create_link(self, link_data: LinkCreate, user_id: UUID) -> LinkResponse:
         """
@@ -50,7 +106,7 @@ class LinkService:
         try:
             response = (
                 await self.supabase.table(self.links_table)
-                .insert(insert_data)  # Domyślnie returning="representation"
+                .insert(insert_data)
                 .execute()
             )
 
@@ -72,9 +128,13 @@ class LinkService:
                     "Failed to retrieve created link data after insert (unexpected response format)."
                 )
 
-        except Exception as e:
+        except AliasConflictException:  # Jawnie łap i rzucaj dalej
+            print(f"Re-raising AliasConflictException from {context}")
+            raise
+        except Exception as e:  # Pozostałe idą do handlera
             self._handle_db_error(e, context=context)
-            raise DatabaseException("Unhandled error during link creation.")
+            # Jeśli handler nie rzucił, coś jest bardzo źle
+            raise DatabaseException(f"Unhandled error after handler in {context}")
 
     async def get_link_by_id(self, link_id: UUID, user_id: UUID) -> LinkResponse:
         context = f"link retrieval for ID {link_id} by user {user_id}"
@@ -94,13 +154,17 @@ class LinkService:
                 return link_dto
             else:
                 print(f"[WARNING] Link not found or access denied for {context}")
+                # Rzuć NotFoundException, zostanie złapany i rzucony dalej przez blok except
                 raise NotFoundException(
                     detail="Link not found or you do not have permission to access it."
                 )
 
-        except Exception as e:
+        except NotFoundException:  # Jawnie łap i rzucaj dalej
+            print(f"Re-raising NotFoundException from {context}")
+            raise
+        except Exception as e:  # Pozostałe idą do handlera
             self._handle_db_error(e, context=context)
-            raise DatabaseException(f"Unhandled error during {context}")
+            raise DatabaseException(f"Unhandled error after handler in {context}")
 
     async def get_links_paginated(
         self, user_id: UUID, page: int, page_size: int
@@ -114,7 +178,6 @@ class LinkService:
         try:
             response = (
                 await self.supabase.table(self.links_table)
-                # <<< POPRAWKA: Użyj CountMethod.exact
                 .select("*", count=CountMethod.exact)
                 .order("created_at", desc=True)
                 .range(offset, range_to)
@@ -137,9 +200,10 @@ class LinkService:
             )
             return paginated_response
 
+        # Tutaj raczej nie spodziewamy się wyjątków biznesowych, tylko DB lub inne
         except Exception as e:
             self._handle_db_error(e, context=context)
-            raise DatabaseException(f"Unhandled error during {context}")
+            raise DatabaseException(f"Unhandled error after handler in {context}")
 
     async def update_link(
         self, link_id: UUID, update_data: LinkUpdate, user_id: UUID
@@ -157,18 +221,27 @@ class LinkService:
 
         if not db_update_payload:
             print(f"No fields to update for {context}. Returning current state.")
-            return await self.get_link_by_id(link_id=link_id, user_id=user_id)
+            # To wywołanie może rzucić NotFoundException, jeśli link nie istnieje
+            try:
+                return await self.get_link_by_id(link_id=link_id, user_id=user_id)
+            except NotFoundException:
+                raise  # Rzuć dalej NotFoundException z get_link_by_id
+            except Exception as e:  # Obsłuż inne błędy z get_link_by_id
+                self._handle_db_error(
+                    e, context=f"get_link_by_id during update check for {context}"
+                )
+                raise DatabaseException(
+                    f"Unhandled error during get_link_by_id in update check for {context}"
+                )
 
         try:
             response = (
                 await self.supabase.table(self.links_table)
-                .update(db_update_payload)  # Domyślnie returning="representation"
+                .update(db_update_payload)
                 .eq("id", str(link_id))
-                # <<< USUNIĘTO .select("*") i .maybe_single()
                 .execute()
             )
 
-            # Sprawdź, czy odpowiedź istnieje i czy .data jest listą z dokładnie jednym elementem
             if (
                 response
                 and response.data
@@ -180,17 +253,20 @@ class LinkService:
                 updated_link_dto = LinkResponse.model_validate(updated_data)
                 return updated_link_dto
             else:
-                # Update nie zadziałał na oczekiwanym jednym wierszu (prawdopodobnie RLS lub link nie istnieje)
                 print(
                     f"[WARNING] Link not found or access denied during update for {context}. Response: {response}"
                 )
+                # Rzuć NotFoundException, zostanie złapany i rzucony dalej przez blok except
                 raise NotFoundException(
                     detail="Link not found or you do not have permission to update it."
                 )
 
-        except Exception as e:
+        except NotFoundException:  # Jawnie łap i rzucaj dalej
+            print(f"Re-raising NotFoundException from {context}")
+            raise
+        except Exception as e:  # Pozostałe idą do handlera
             self._handle_db_error(e, context=context)
-            raise DatabaseException(f"Unhandled error during {context}")
+            raise DatabaseException(f"Unhandled error after handler in {context}")
 
     async def delete_link(self, link_id: UUID, user_id: UUID) -> None:
         context = f"link deletion for ID {link_id} by user {user_id}"
@@ -199,7 +275,6 @@ class LinkService:
         try:
             response = (
                 await self.supabase.table(self.links_table)
-                # <<< POPRAWKA: Użyj CountMethod.exact
                 .delete(count=CountMethod.exact)
                 .eq("id", str(link_id))
                 .execute()
@@ -212,6 +287,7 @@ class LinkService:
                 print(
                     f"[WARNING] Link not found or access denied during delete for {context}"
                 )
+                # Rzuć NotFoundException
                 raise NotFoundException(
                     detail="Link not found or you do not have permission to delete it."
                 )
@@ -220,11 +296,17 @@ class LinkService:
                 print(
                     f"[ERROR] Unexpected delete count ({count_val}) or invalid response for {context}"
                 )
+                # To jest błąd bazy danych lub logiki
                 raise DatabaseException("Unexpected result during link deletion.")
 
-        except Exception as e:
+        except NotFoundException:  # Jawnie łap i rzucaj dalej
+            print(f"Re-raising NotFoundException from {context}")
+            raise
+        except (
+            Exception
+        ) as e:  # Pozostałe (w tym DatabaseException z bloku else) idą do handlera
             self._handle_db_error(e, context=context)
-            raise DatabaseException(f"Unhandled error during {context}")
+            raise DatabaseException(f"Unhandled error after handler in {context}")
 
     async def get_link_statistics(
         self, link_id: UUID, user_id: UUID
@@ -245,6 +327,7 @@ class LinkService:
 
             if not (link_response and link_response.data):
                 print(f"[WARNING] Link not found or access denied for {context}")
+                # Rzuć NotFoundException
                 raise NotFoundException(
                     "Link not found or you do not have permission to access it."
                 )
@@ -277,7 +360,7 @@ class LinkService:
                     target_type_str = target_type_enum.value
                 except ValueError:
                     print(
-                        f"[WARNING] Invalid target_type '{rule['target_type']}' found for rule {rule.get('id','N/A')}"
+                        f"[WARNING] Invalid target_type '{rule.get('target_type')}' found for rule {rule.get('id','N/A')}"
                     )
                     target_type_str = "unknown"
 
@@ -315,34 +398,9 @@ class LinkService:
             print(f"Successfully prepared statistics for {context}")
             return stats_response
 
-        except NotFoundException:
+        except NotFoundException:  # Jawnie łap i rzucaj dalej
+            print(f"Re-raising NotFoundException from {context}")
             raise
-        except Exception as e:
+        except Exception as e:  # Pozostałe idą do handlera
             self._handle_db_error(e, context=context)
-            raise DatabaseException(f"Unhandled error during {context}")
-
-    def _handle_db_error(self, error: Exception, context: str):
-        if isinstance(error, PostgrestAPIError):
-            print(
-                f"[ERROR] PostgrestAPIError during {context}: Status={getattr(error,'status','N/A')}, Message='{getattr(error,'message','Unknown')}'"
-            )
-            if hasattr(error, "code") and error.code == POSTGRES_UNIQUE_VIOLATION_CODE:
-                if "routr_links_alias_key" in getattr(error, "message", ""):
-                    print(f"[CONFLICT] Alias conflict detected during {context}.")
-                    raise AliasConflictException()
-                else:
-                    print(
-                        f"[ERROR] Unique constraint violation (not alias) during {context}: {getattr(error,'message','Unknown')}"
-                    )
-                    raise DatabaseException(
-                        detail=f"Unique constraint violation during {context}: {getattr(error,'message','Unknown')}"
-                    )
-            raise DatabaseException(
-                detail=f"Database API error during {context}: {getattr(error,'message','Unknown')}"
-            )
-        else:
-            print(f"[ERROR] Unexpected error during {context}:")
-            traceback.print_exc()
-            raise DatabaseException(
-                detail=f"An unexpected error occurred during {context}."
-            )
+            raise DatabaseException(f"Unhandled error after handler in {context}")

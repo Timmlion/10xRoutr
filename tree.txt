@@ -52,8 +52,9 @@
 │   │   ├── stats.py
 │   │   └── token.py
 │   └── services
-│       ├── __init__py
+│       ├── __init__.py
 │       ├── __pycache__
+│       │   ├── __init__.cpython-311.pyc
 │       │   ├── auth_service.cpython-311.pyc
 │       │   ├── custom_exceptions.cpython-311.pyc
 │       │   ├── link_service.cpython-311.pyc
@@ -73,10 +74,20 @@
 │   │   └── conftest.cpython-311-pytest-8.3.5.pyc
 │   ├── api
 │   │   └── v1
+│   │       ├── __pycache__
+│   │       │   └── test_links.cpython-311-pytest-8.3.5.pyc
 │   │       └── test_links.py
 │   ├── conftest.py
 │   └── services
-│       └── test_redirection_service.py
+│       ├── __init__.py
+│       ├── __pycache__
+│       │   ├── __init__.cpython-311.pyc
+│       │   ├── test_link_service.cpython-311-pytest-8.3.5.pyc
+│       │   ├── test_redirection_service.cpython-311-pytest-8.3.5.pyc
+│       │   └── test_rule_service.cpython-311-pytest-8.3.5.pyc
+│       ├── test_link_service.py
+│       ├── test_redirection_service.py
+│       └── test_rule_service.py
 └── tree.txt
 
-24 directories, 56 files
+26 directories, 65 files

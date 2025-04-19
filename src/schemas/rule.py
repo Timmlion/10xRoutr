@@ -6,7 +6,7 @@ from pydantic import (
     model_validator,
     ConfigDict,
     UUID4,
-    ValidationInfo,  # <<< Import jest poprawny
+    ValidationInfo,
 )
 from typing import Optional, List, Any
 from datetime import datetime
@@ -74,7 +74,7 @@ class RuleCreate(BaseModel):
         return self
 
     @field_validator("target_value")
-    # <<< POPRAWKA: Zmieniono typ argumentu 'info' na ValidationInfo
+    # pylint: disable=no-self-argument <<< Ignoruj błąd Pylint E0213
     def validate_target_value_format(cls, v: str, info: ValidationInfo) -> str:
         """Validate target_value format based on target_type."""
         target_type_field = info.data.get("target_type")
@@ -91,42 +91,32 @@ class RuleUpdate(BaseModel):
     """
     Schema for data allowed when updating a rule.
     Used as request body for PATCH /links/{link_id}/rules/{rule_id}.
+    All fields are optional for PATCH operation.
     """
 
     priority: Optional[int] = Field(
-        None,
+        default=None,  # Użyj default=None w Field, jeśli chcesz zachować inne opcje Field
         gt=0,
         description="New execution priority (positive integer, unique per link).",
     )
-    rule_type: Optional[RuleTypeEnum] = Field(
-        None,
-        description="Change the rule type ('time' or 'clicks'). Requires related fields to be set consistently.",
-    )
-    target_type: Optional[TargetTypeEnum] = Field(
-        None,
-        description="Change the target type ('url' or 'html'). Requires target_value format validation.",
-    )
-    target_value: Optional[str] = Field(
-        None, description="New target value (URL or HTML)."
-    )
-    start_time: Optional[datetime | None] = Field(
-        None,
-        description="New start time (UTC) if rule_type is 'time'. Can be set to null.",
-    )
-    end_time: Optional[datetime | None] = Field(
-        None,
-        description="New end time (UTC) if rule_type is 'time'. Can be set to null.",
-    )
+    # Dla pól bez dodatkowych opcji Field, wystarczy '= None'
+    rule_type: Optional[RuleTypeEnum] = None
+    target_type: Optional[TargetTypeEnum] = None
+    target_value: Optional[str] = None
+    start_time: Optional[datetime | None] = None
+    end_time: Optional[datetime | None] = None
     max_clicks: Optional[int | None] = Field(
-        None,
+        default=None,  # Użyj default=None w Field
         gt=0,
         description="New max clicks (positive integer) if rule_type is 'clicks'. Can be set to null.",
     )
 
+    # Walidatory pól (działają tylko gdy pole jest podane w danych wejściowych)
     @field_validator("priority")
     @classmethod
     def validate_priority_positive(cls, v: Optional[int]):
         """Validate priority is positive if provided."""
+        # Walidacja gt=0 jest już w Field, ale zostawiamy dla przykładu
         if v is not None and v <= 0:
             raise ValueError("priority must be positive if provided")
         return v
@@ -135,12 +125,13 @@ class RuleUpdate(BaseModel):
     @classmethod
     def validate_max_clicks_positive(cls, v: Optional[int | None]):
         """Validate max_clicks is positive if provided."""
+        # Walidacja gt=0 jest już w Field, ale zostawiamy dla przykładu
         if v is not None and v <= 0:
             raise ValueError("max_clicks must be positive if provided")
         return v
 
     @field_validator("target_value")
-    # <<< POPRAWKA: Zmieniono typ argumentu 'info' na ValidationInfo
+    # pylint: disable=no-self-argument
     def validate_target_value_update(
         cls, v: Optional[str], info: ValidationInfo
     ) -> Optional[str]:
@@ -162,8 +153,6 @@ class RuleUpdate(BaseModel):
 
 
 # --- Data Transfer Objects (Output) ---
-
-
 class RuleResponse(BaseModel):
     """
     Schema for representing a rule when returned by the API.

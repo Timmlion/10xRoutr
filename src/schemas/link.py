@@ -68,12 +68,12 @@ class LinkUpdate(BaseModel):
     Only default_url is mutable in MVP. All fields optional for PATCH.
     """
 
-    # Pamiętaj, że do DB i tak zapisujemy string
-    default_url: Optional[HttpUrl | None] = Field(
-        None,  # Zmieniono opis - default=None oznacza, że pole jest opcjonalne
-        description="Optional fallback URL (must be a valid HTTP/HTTPS URL or null to clear).",
-    )
-    # Alias is intentionally omitted as it's immutable post-creation.
+    # <<< POPRAWKA: Zmień Field(None, ...) na jawne przypisanie wartości domyślnej None
+    default_url: Optional[HttpUrl | None] = None
+
+    # Usunięto Field(), bo teraz jest tylko wartość domyślna,
+    # opis można dodać w docstringu klasy lub jako komentarz.
+    # description="Optional fallback URL (must be a valid HTTP/HTTPS URL or null to clear)."
 
 
 # --- Data Transfer Objects (Output) ---

@@ -1,12 +1,13 @@
 # src/services/rule_service.py
 
-# Usunięto import logging
 import traceback
 from uuid import UUID
 from typing import List, Optional, Tuple, Dict, Any
-from supabase import AsyncClient  # <<< POPRAWIONY IMPORT
+from supabase import AsyncClient
 from postgrest.exceptions import APIError as PostgrestAPIError
+from postgrest.types import CountMethod  # <<< DODANO IMPORT
 
+# Importuj WSZYSTKIE wyjątki biznesowe, które mogą być rzucane lub łapane
 from src.services.custom_exceptions import (
     DatabaseException,
     NotFoundException,
@@ -18,17 +19,8 @@ from src.services.custom_exceptions import (
 from src.schemas.rule import RuleCreate, RuleUpdate, RuleResponse
 from src.schemas.enums import RuleTypeEnum, TargetTypeEnum
 
-# Usunięto importy i użycie Pydantic FieldValidationInfo, jeśli nie jest potrzebne
-# try:
-#     from pydantic_core import PydanticCustomError
-#     from pydantic import FieldValidationInfo
-# except ImportError:
-#     FieldValidationInfo = Any
-
-# Usunięto logger
-
 POSTGRES_UNIQUE_VIOLATION_CODE = "23505"
-# Upewnij się, że ta nazwa klucza jest DOKŁADNIE taka jak w definicji bazy danych
+# Upewnij się, że ta nazwa klucza jest poprawna
 ROUTING_RULES_LINK_ID_PRIORITY_KEY = "routing_rules_link_id_priority_key"
 
 
@@ -42,133 +34,142 @@ class RuleService:
     def __init__(self, supabase_client: AsyncClient):
         self.supabase = supabase_client
         self.rules_table = "routing_rules"
-        self.links_table = "routr_links"
+        self.links_table = "routr_links"  # Potrzebne do weryfikacji
 
     def _handle_db_error(self, error: Exception, context: str):
         """Handles database errors and raises appropriate service exceptions."""
-        if isinstance(error, PostgrestAPIError):
-            # Zastąpiono logger.error
+        # Sprawdź najpierw wyjątki biznesowe RELEWANTNE DLA RULESERVICE
+        if isinstance(
+            error,
+            (
+                NotFoundException,
+                ParentLinkNotFoundException,
+                PriorityConflictException,
+                ValidationException,
+            ),
+        ):
             print(
-                f"[ERROR] PostgrestAPIError during {context}: Status={getattr(error,'status','N/A')}, Code={getattr(error,'code','N/A')}, Message='{getattr(error,'message','Unknown')}'"
+                f"[INFO] Business logic exception caught in handler: {type(error).__name__}. Re-raising."
             )
-            if hasattr(error, "code") and error.code == POSTGRES_UNIQUE_VIOLATION_CODE:
-                # Sprawdzamy, czy komunikat błędu zawiera nazwę naszego unikalnego ograniczenia
-                if ROUTING_RULES_LINK_ID_PRIORITY_KEY in getattr(
-                    error, "details", getattr(error, "message", "")
-                ):  # Sprawdzaj 'details' lub 'message'
-                    # Zastąpiono logger.warning
+            raise error  # Rzuć ponownie ten sam wyjątek biznesowy
+
+        # Następnie sprawdź błędy Postgrest/DB
+        if isinstance(error, PostgrestAPIError):
+            error_code = getattr(error, "code", None)
+            error_message = getattr(error, "message", "")
+            error_details = getattr(error, "details", "")
+            error_status = getattr(error, "status", "N/A")
+
+            print(
+                f"[ERROR] PostgrestAPIError during {context}: Status={error_status}, Code={error_code}, Message='{error_message}' Details='{error_details}'"
+            )
+
+            if error_code == POSTGRES_UNIQUE_VIOLATION_CODE:
+                error_full_msg = error_details or error_message
+                # Sprawdź konflikt priorytetu
+                if ROUTING_RULES_LINK_ID_PRIORITY_KEY in error_message:
                     print(f"[CONFLICT] Priority conflict detected during {context}.")
-                    # Użyj wyjątku, który ma domyślny komunikat lub przekaż go
                     raise PriorityConflictException(
                         detail="This priority is already in use for this link."
-                    )
+                    ) from error
                 else:
-                    # Inne naruszenie unikalności
-                    # Zastąpiono logger.error
                     print(
-                        f"[ERROR] Unique constraint violation (not priority) during {context}: {getattr(error,'message','Unknown')}"
+                        f"[ERROR] Unique constraint violation (other) during {context}: {error_details or error_message}"
                     )
-                    raise DatabaseException(
-                        detail=f"Unique constraint violation during {context}: {getattr(error,'message','Unknown')}"
-                    )
-            # Inne błędy Postgrest
-            raise DatabaseException(
-                detail=f"Database API error during {context}: {getattr(error,'message','Unknown')}"
-            )
+                    raise DatabaseException(...) from error
         else:
             # Inne, nieoczekiwane błędy
-            # Zastąpiono logger.exception
             print(f"[ERROR] Unexpected error during {context}:")
             traceback.print_exc()
             raise DatabaseException(
                 detail=f"An unexpected error occurred during {context}."
-            )
+            ) from error
 
     async def _verify_link_ownership(self, link_id: UUID, user_id: UUID):
         """
         Verifies if a link exists and belongs to the user. Raises ParentLinkNotFoundException if not.
-        Relies on RLS implicitly checking ownership when querying with user context.
         """
         context = f"link ownership verification for link ID {link_id} by user {user_id}"
-        print(f"Attempting {context}")  # Zastąpiono logger.info
+        print(f"Attempting {context}")
         try:
             response = (
                 await self.supabase.table(self.links_table)
-                .select(
-                    "id", count="exact"
-                )  # Wystarczy ID lub cokolwiek, liczy się count
+                .select("id", count=CountMethod.exact)
                 .eq("id", str(link_id))
-                # RLS zastosuje filtr user_id automatycznie
-                .maybe_single()  # Zwróci None jeśli RLS odrzuci
+                .maybe_single()
                 .execute()
             )
 
-            # <<< POPRAWKA: Sprawdź response ORAZ response.data
             if not (response and response.data):
-                # Zastąpiono logger.warning
                 print(f"[WARNING] {context}: Link not found or access denied.")
-                # Użyj wyjątku z domyślnym komunikatem
-                raise ParentLinkNotFoundException()
+                # <<< POPRAWKA: Przekaż link_id w komunikacie 'detail' >>>
+                raise ParentLinkNotFoundException(
+                    detail=f"Parent link with ID '{link_id}' not found or access denied."
+                )
             else:
-                print(f"Link ownership verified for {context}.")  # Logowanie sukcesu
+                print(f"Link ownership verified for {context}.")
+        except ParentLinkNotFoundException:
+            raise
         except Exception as e:
-            # Obsługa błędów DB (jeśli wystąpią podczas weryfikacji)
             self._handle_db_error(e, context=context)
-            # Jeśli _handle_db_error nie rzuci wyjątku, rzuć ogólny
             raise DatabaseException(f"Unhandled error during {context}")
 
     async def add_rule_to_link(
         self, link_id: UUID, rule_data: RuleCreate, user_id: UUID
     ) -> RuleResponse:
         """Adds a new rule to an existing link owned by the user."""
-        # Weryfikacja własności linku jest teraz ważna, aby zwrócić poprawny błąd 404
         await self._verify_link_ownership(link_id=link_id, user_id=user_id)
 
         context = f"rule creation for link ID {link_id} by user {user_id}"
-        print(
-            f"Attempting {context} with priority {rule_data.priority}"
-        )  # Zastąpiono logger.info
+        print(f"Attempting {context} with priority {rule_data.priority}")
 
         insert_data = rule_data.model_dump()
         insert_data["link_id"] = str(link_id)
 
         try:
             response = (
-                await self.supabase.table(self.rules_table)
-                .insert(insert_data)
-                .select("*")  # Zwróć pełny nowo utworzony obiekt
-                .single()  # Oczekujemy jednego wyniku
+                await self.supabase.table(self.rules_table).insert(insert_data)
+                # <<< USUNIĘTO .select("*").single() >>>
                 .execute()
             )
 
-            # <<< POPRAWKA: Sprawdź response ORAZ response.data
-            if response and response.data:
+            # Sprawdź, czy insert zwrócił dane (domyślnie zwraca listę)
+            if (
+                response
+                and response.data
+                and isinstance(response.data, list)
+                and len(response.data) == 1
+            ):
+                created_data = response.data[0]
                 print(
-                    f"Successfully created rule with ID: {response.data.get('id')} for link {link_id}"
-                )  # Zastąpiono logger.info
-                created_rule_dto = RuleResponse.model_validate(response.data)
+                    f"Successfully created rule with ID: {created_data.get('id')} for link {link_id}"
+                )
+                created_rule_dto = RuleResponse.model_validate(created_data)
                 return created_rule_dto
             else:
                 print(
-                    "[ERROR] Insert successful but no data returned from database."
-                )  # Zastąpiono logger.error
+                    f"[ERROR] Insert successful but no data returned from database. Response: {response}"
+                )
                 raise DatabaseException(
                     "Failed to retrieve created rule data after insert."
                 )
 
-        except Exception as e:
+        except ParentLinkNotFoundException:  # Przechwyć z _verify_link_ownership
+            raise
+        except PriorityConflictException:  # Przechwyć z _handle_db_error
+            raise
+        except Exception as e:  # Pozostałe idą do handlera
             self._handle_db_error(e, context=context)
-            raise DatabaseException(f"Unhandled error during {context}")
+            raise DatabaseException(f"Unhandled error after handler in {context}")
 
     async def get_rules_for_link(
         self, link_id: UUID, user_id: UUID
     ) -> List[RuleResponse]:
         """Retrieves a list of all rules for a given link owned by the user, ordered by priority."""
-        # Weryfikacja własności linku, aby dać 404 jeśli link nie należy do usera
         await self._verify_link_ownership(link_id=link_id, user_id=user_id)
 
         context = f"rules retrieval for link ID {link_id} by user {user_id}"
-        print(f"Attempting {context}")  # Zastąpiono logger.info
+        print(f"Attempting {context}")
 
         try:
             response = (
@@ -179,50 +180,48 @@ class RuleService:
                 .execute()
             )
 
-            # Sprawdź czy response istnieje przed dostępem do data
             rules_data = response.data if response and response.data else []
-            print(
-                f"Retrieved {len(rules_data)} rules for {context}"
-            )  # Zastąpiono logger.info
+            print(f"Retrieved {len(rules_data)} rules for {context}")
 
             rule_list = [RuleResponse.model_validate(item) for item in rules_data]
             return rule_list
 
+        except ParentLinkNotFoundException:  # Przechwyć z _verify_link_ownership
+            raise
         except Exception as e:
             self._handle_db_error(e, context=context)
-            raise DatabaseException(f"Unhandled error during {context}")
+            raise DatabaseException(f"Unhandled error after handler in {context}")
 
     async def get_rule_details(
         self, link_id: UUID, rule_id: UUID, user_id: UUID
     ) -> RuleResponse:
-        """Retrieves details of a specific rule, verifying ownership via the parent link and RLS."""
+        """Retrieves details of a specific rule, verifying ownership via RLS."""
+        # Weryfikacja linku nadrzędnego nie jest tu konieczna, bo RLS na tabeli reguł użyje link_id
         context = f"rule details retrieval for rule ID {rule_id} on link {link_id} by user {user_id}"
-        print(f"Attempting {context}")  # Zastąpiono logger.info
+        print(f"Attempting {context}")
         try:
             response = (
                 await self.supabase.table(self.rules_table)
                 .select("*")
                 .eq("id", str(rule_id))
-                .eq("link_id", str(link_id))  # RLS i tak sprawdzi user_id przez link_id
+                .eq("link_id", str(link_id))  # Dodatkowe zabezpieczenie
                 .maybe_single()
                 .execute()
             )
 
-            # <<< POPRAWKA: Sprawdź response ORAZ response.data
             if response and response.data:
-                print(
-                    f"Successfully retrieved rule details for rule ID: {rule_id}"
-                )  # Zastąpiono logger.info
+                print(f"Successfully retrieved rule details for rule ID: {rule_id}")
                 rule_dto = RuleResponse.model_validate(response.data)
                 return rule_dto
             else:
-                # Zastąpiono logger.warning
                 print(f"[WARNING] Rule not found or access denied for {context}")
                 raise NotFoundException(detail="Rule not found or access denied.")
 
+        except NotFoundException:  # Jawnie łap i rzucaj dalej
+            raise
         except Exception as e:
             self._handle_db_error(e, context=context)
-            raise DatabaseException(f"Unhandled error during {context}")
+            raise DatabaseException(f"Unhandled error after handler in {context}")
 
     async def update_rule(
         self, link_id: UUID, rule_id: UUID, update_data: RuleUpdate, user_id: UUID
@@ -231,32 +230,34 @@ class RuleService:
         update_context = (
             f"rule update for ID {rule_id} on link {link_id} by user {user_id}"
         )
-        print(f"Attempting {update_context}")  # Zastąpiono logger.info
+        print(f"Attempting {update_context}")
+
+        # Krok 0: Weryfikacja własności linku nadrzędnego (dobra praktyka przed próbą update)
+        await self._verify_link_ownership(link_id=link_id, user_id=user_id)
 
         try:
-            # Krok 1: Pobierz bieżący stan reguły (weryfikuje istnienie i własność przez RLS)
-            print(
-                f"Verifying existence and ownership for {update_context}"
-            )  # Zastąpiono logger.debug
+            # Krok 1: Pobierz bieżący stan reguły (weryfikuje istnienie reguły)
+            print(f"Fetching current rule state for {update_context}")
             current_rule_response = (
                 await self.supabase.table(self.rules_table)
                 .select("*")
                 .eq("id", str(rule_id))
-                .eq("link_id", str(link_id))
+                .eq(
+                    "link_id", str(link_id)
+                )  # Upewnij się, że należy do właściwego linku
                 .maybe_single()
                 .execute()
             )
 
-            # <<< POPRAWKA: Sprawdź response ORAZ response.data
             if not (current_rule_response and current_rule_response.data):
-                # Zastąpiono logger.warning
                 print(
-                    f"[WARNING] Rule not found or access denied during update check for {update_context}"
+                    f"[WARNING] Rule not found during update check for {update_context}"
                 )
-                raise NotFoundException("Rule not found or access denied.")
+                # Rzuć NotFoundException specyficzny dla reguły
+                raise NotFoundException("Rule to update not found.")
 
             current_rule_dict = current_rule_response.data
-            print("Ownership verified. Preparing update.")  # Zastąpiono logger.debug
+            print("Rule exists. Preparing update.")
 
             # Krok 2 i 3: Połącz dane i Walidacja spójności
             final_state_dict = current_rule_dict.copy()
@@ -264,10 +265,8 @@ class RuleService:
             final_state_dict.update(update_payload_dict)
 
             try:
-                # Zwaliduj używając modelu Create
                 validated_final_state = RuleCreate.model_validate(final_state_dict)
             except ValueError as val_error:
-                # Zastąpiono logger.warning
                 print(
                     f"[VALIDATION ERROR] Inconsistent data after merging update for {update_context}: {val_error}"
                 )
@@ -275,8 +274,6 @@ class RuleService:
 
             # Krok 4: Przygotuj payload do update
             db_update_payload = update_payload_dict
-
-            # Wyczyść nieistotne pola
             final_rule_type = RuleTypeEnum(validated_final_state.rule_type)
             if "rule_type" in db_update_payload:
                 if final_rule_type == RuleTypeEnum.TIME:
@@ -289,73 +286,83 @@ class RuleService:
             if not db_update_payload:
                 print(
                     f"No actual changes detected for {update_context}. Returning current state."
-                )  # Zastąpiono logger.info
+                )
                 return RuleResponse.model_validate(current_rule_dict)
 
             print(
                 f"Attempting database update for {update_context} with payload: {db_update_payload}"
-            )  # Zastąpiono logger.debug
+            )
             response = (
                 await self.supabase.table(self.rules_table)
                 .update(db_update_payload)
                 .eq("id", str(rule_id))
+                # <<< USUNIĘTO .single() >>>
                 .execute()
             )
 
-            # <<< POPRAWKA: Sprawdź response ORAZ response.data
-            if response and response.data:
-                print(
-                    f"Successfully updated rule ID: {rule_id}"
-                )  # Zastąpiono logger.info
-                updated_rule_dto = RuleResponse.model_validate(response.data)
+            # Sprawdź, czy update zwrócił dane (lista z jednym elementem)
+            if (
+                response
+                and response.data
+                and isinstance(response.data, list)
+                and len(response.data) == 1
+            ):
+                updated_data = response.data[0]
+                print(f"Successfully updated rule ID: {rule_id}")
+                updated_rule_dto = RuleResponse.model_validate(updated_data)
                 return updated_rule_dto
             else:
-                # Zastąpiono logger.error
+                # Jeśli update nic nie zwrócił, mimo że weryfikacja istnienia przeszła, to dziwne
                 print(
-                    f"[ERROR] Update executed but no data returned for {update_context}"
+                    f"[ERROR] Update query executed but did not return expected data for {update_context}. Response: {response}"
                 )
-                # To nie powinno się zdarzyć z .single() po udanym update, ale zabezpieczamy
                 raise DatabaseException(
-                    "Failed to retrieve updated rule data after update."
+                    "Failed to retrieve updated rule data after update (unexpected response format)."
                 )
 
-        except NotFoundException:  # Przechwyć i rzuć dalej
+        # Jawnie łap wyjątki, które mogą wystąpić w tej metodzie
+        except ParentLinkNotFoundException:  # Z _verify_link_ownership
             raise
-        except ValidationException:  # Przechwyć i rzuć dalej
+        except NotFoundException:  # Z weryfikacji istnienia reguły lub z handlera
             raise
-        except Exception as e:
-            # Krok 6: Obsługa błędów DB (np. konflikt priorytetu)
+        except ValidationException:  # Z walidacji Pydantic
+            raise
+        except PriorityConflictException:  # Z _handle_db_error
+            raise
+        except Exception as e:  # Pozostałe idą do handlera
             self._handle_db_error(e, context=update_context)
-            # Fallback, jeśli _handle_db_error nie rzuci wyjątku
-            raise DatabaseException(f"Unhandled error during {update_context}")
+            raise DatabaseException(
+                f"Unhandled error after handler in {update_context}"
+            )
 
     async def delete_rule(self, link_id: UUID, rule_id: UUID, user_id: UUID) -> None:
         """Deletes a specific routing rule owned by the user."""
+        # Weryfikacja własności linku nadrzędnego przed próbą usunięcia reguły
+        await self._verify_link_ownership(link_id=link_id, user_id=user_id)
+
         context = (
             f"rule deletion for rule ID {rule_id} on link {link_id} by user {user_id}"
         )
-        print(f"Attempting {context}")  # Zastąpiono logger.info
+        print(f"Attempting {context}")
 
         try:
-            # Używamy count='exact'
             response = (
                 await self.supabase.table(self.rules_table)
-                .delete()
+                # <<< POPRAWKA: Użyj CountMethod.exact >>>
+                .delete(count=CountMethod.exact)
                 .eq("id", str(rule_id))
-                .eq("link_id", str(link_id))  # RLS i tak to wymusi
+                .eq("link_id", str(link_id))  # Dodatkowe zabezpieczenie
                 .execute()
             )
 
             if response and response.count == 1:
-                print(
-                    f"Successfully deleted rule with ID: {rule_id}"
-                )  # Zastąpiono logger.info
+                print(f"Successfully deleted rule with ID: {rule_id}")
                 return
             elif response and response.count == 0:
-                # Zastąpiono logger.warning
                 print(
                     f"[WARNING] Rule not found or access denied during delete for {context}"
                 )
+                # Rzuć NotFoundException specyficzny dla reguły
                 raise NotFoundException(
                     detail="Rule not found or you do not have permission to delete it."
                 )
@@ -363,9 +370,13 @@ class RuleService:
                 count_val = response.count if response else "N/A"
                 print(
                     f"[ERROR] Unexpected delete count ({count_val}) or invalid response for {context}"
-                )  # Zastąpiono logger.error
+                )
                 raise DatabaseException("Unexpected result during rule deletion.")
 
-        except Exception as e:
+        except ParentLinkNotFoundException:  # Z _verify_link_ownership
+            raise
+        except NotFoundException:  # Z tego bloku try lub z handlera
+            raise
+        except Exception as e:  # Pozostałe idą do handlera
             self._handle_db_error(e, context=context)
-            raise DatabaseException(f"Unhandled error during {context}")  # Fallback
+            raise DatabaseException(f"Unhandled error after handler in {context}")

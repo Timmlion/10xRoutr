@@ -66,9 +66,7 @@ class AliasConflictException(
 
 
 class ParentLinkNotFoundException(NotFoundException):
-    """Raised when the parent link for a rule operation is not found or not owned."""
-
-    def __init__(self, detail: str = "Parent link not found or access denied"):
+    def __init__(self, detail: str = "Parent link not found or access denied."):
         super().__init__(detail)
 
 
