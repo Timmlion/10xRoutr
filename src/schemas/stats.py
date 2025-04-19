@@ -1,9 +1,10 @@
 # src/schemas/stats.py
-from pydantic import BaseModel, UUID4
+from pydantic import BaseModel, UUID4, Field  # <<< DODANO Field
 from typing import List, Optional
 
-# Import ENUMs defined earlier
-from enums import TargetTypeEnum
+# Zakładając, że enums.py jest w tym samym folderze 'schemas'
+# użyj kropki dla importu względnego
+from .enums import TargetTypeEnum
 
 
 class TargetClickStat(BaseModel):

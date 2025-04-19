@@ -8,7 +8,6 @@ This is the core public-facing endpoint of the _routr_ application. It handles i
 
 - **Method:** `GET`
 - **URL Structure:** `/{alias_path:path}`
-  - _Note:_ `:path` captures everything after the base URL, allowing aliases like `campaign/summer` or `promo1`. Assumes deployment maps the application root to this endpoint.
 - **Parameters:**
   - **Path Parameters:**
     - `alias_path` (string, Required): The unique alias identifying the `routr_link`.

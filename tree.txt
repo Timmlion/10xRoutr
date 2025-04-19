@@ -1,0 +1,82 @@
+.
+├── pytest.ini
+├── README.md
+├── requirements.txt
+├── src
+│   ├── __init__.py
+│   ├── __pycache__
+│   │   ├── __init__.cpython-311.pyc
+│   │   └── main.cpython-311.pyc
+│   ├── api
+│   │   ├── __pycache__
+│   │   │   └── deps.cpython-311.pyc
+│   │   ├── deps.py
+│   │   └── v1
+│   │       ├── __pycache__
+│   │       │   └── api.cpython-311.pyc
+│   │       ├── api.py
+│   │       └── endpoints
+│   │           ├── __init__.py
+│   │           ├── __pycache__
+│   │           │   ├── __init__.cpython-311.pyc
+│   │           │   ├── auth.cpython-311.pyc
+│   │           │   ├── links.cpython-311.pyc
+│   │           │   └── rules.cpython-311.pyc
+│   │           ├── auth.py
+│   │           ├── links.py
+│   │           └── rules.py
+│   ├── core
+│   │   ├── __pycache__
+│   │   │   └── config.cpython-311.pyc
+│   │   └── config.py
+│   ├── db
+│   │   ├── __pycache__
+│   │   │   └── supabase_client.cpython-311.pyc
+│   │   └── supabase_client.py
+│   ├── main.py
+│   ├── schemas
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   │   ├── __init__.cpython-311.pyc
+│   │   │   ├── auth.cpython-311.pyc
+│   │   │   ├── enums.cpython-311.pyc
+│   │   │   ├── link.cpython-311.pyc
+│   │   │   ├── pagination.cpython-311.pyc
+│   │   │   ├── rule.cpython-311.pyc
+│   │   │   └── stats.cpython-311.pyc
+│   │   ├── auth.py
+│   │   ├── enums.py
+│   │   ├── link.py
+│   │   ├── pagination.py
+│   │   ├── rule.py
+│   │   ├── stats.py
+│   │   └── token.py
+│   └── services
+│       ├── __init__py
+│       ├── __pycache__
+│       │   ├── auth_service.cpython-311.pyc
+│       │   ├── custom_exceptions.cpython-311.pyc
+│       │   ├── link_service.cpython-311.pyc
+│       │   ├── redirection_service.cpython-311.pyc
+│       │   └── rule_service.cpython-311.pyc
+│       ├── auth_service.py
+│       ├── custom_exceptions.py
+│       ├── link_service.py
+│       ├── redirection_service.py
+│       └── rule_service.py
+├── supabase
+│   └── migrations
+│       ├── 20250413190404_create_initial_routr_schema.sql
+│       └── 20250417071351_create_increment_functions.sql
+├── tests
+│   ├── __pycache__
+│   │   └── conftest.cpython-311-pytest-8.3.5.pyc
+│   ├── api
+│   │   └── v1
+│   │       └── test_links.py
+│   ├── conftest.py
+│   └── services
+│       └── test_redirection_service.py
+└── tree.txt
+
+24 directories, 56 files

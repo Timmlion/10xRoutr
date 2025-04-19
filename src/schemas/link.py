@@ -1,5 +1,13 @@
 # src/schemas/link.py
-from pydantic import BaseModel, Field, field_validator, ConfigDict, UUID4, HttpUrl
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    ConfigDict,
+    UUID4,
+    HttpUrl,
+    ValidationInfo,  # Zmieniono z FieldValidationInfo
+)
 from typing import Optional, List
 from datetime import datetime
 import re
@@ -10,14 +18,12 @@ import re
 # if create/update/response schemas diverge significantly.
 class LinkBase(BaseModel):
     alias: str
-    default_url: Optional[HttpUrl | None] = (
-        None  # Use Pydantic's HttpUrl for validation
-    )
+    # Użycie typu HttpUrl jest dobre dla walidacji przychodzących danych,
+    # ale pamiętaj, że do bazy danych zapisujemy string (jak w LinkService)
+    default_url: Optional[HttpUrl | None] = None
 
 
 # --- Command Models (Input) ---
-
-
 class LinkCreate(BaseModel):
     """
     Schema for data required to create a new link.
@@ -25,9 +31,10 @@ class LinkCreate(BaseModel):
     """
 
     alias: str = Field(
-        ...,  # Ellipsis indicates required field
+        ...,
         min_length=3,
         max_length=64,
+        pattern=r"^[a-z0-9-]+$",  # Dodano pattern dla prostszej walidacji
         description="Unique path segment for the link URL (e.g., 'my-campaign'). Must be 3-64 chars, lowercase letters, numbers, hyphens only.",
     )
     default_url: Optional[HttpUrl | None] = Field(
@@ -35,13 +42,22 @@ class LinkCreate(BaseModel):
         description="Optional fallback URL (must be a valid HTTP/HTTPS URL) if no rules match.",
     )
 
+    # Walidator dla aliasu jest teraz mniej potrzebny dzięki `pattern` w Field,
+    # ale zostawiamy go jako przykład lub jeśli chcemy dodać bardziej złożoną logikę.
     @field_validator("alias")
+    @classmethod  # Ten walidator nie potrzebuje 'self' ani 'info'
     def validate_alias_format(cls, v: str) -> str:
-        """Validate alias format against database CHECK constraint."""
-        if not re.match(r"^[a-z0-9-]+$", v):
+        """Ensure alias matches the required format."""
+        # Walidacja pattern jest już robiona przez Pydantic, ale można dodać inne reguły
+        if not re.match(r"^[a-z0-9-]+$", v):  # Redundantne, jeśli pattern działa
             raise ValueError(
                 "Alias must contain only lowercase letters, numbers, and hyphens"
             )
+        if "--" in v or v.startswith("-") or v.endswith("-"):
+            raise ValueError(
+                "Alias cannot contain consecutive hyphens or start/end with a hyphen."
+            )
+        # Można dodać sprawdzanie listy zastrzeżonych słów itp.
         return v
 
 
@@ -52,16 +68,15 @@ class LinkUpdate(BaseModel):
     Only default_url is mutable in MVP. All fields optional for PATCH.
     """
 
+    # Pamiętaj, że do DB i tak zapisujemy string
     default_url: Optional[HttpUrl | None] = Field(
-        # No default ellipsis means it's optional. Explicit None can be sent to clear the field.
-        description="Optional fallback URL (must be a valid HTTP/HTTPS URL or null to clear)."
+        None,  # Zmieniono opis - default=None oznacza, że pole jest opcjonalne
+        description="Optional fallback URL (must be a valid HTTP/HTTPS URL or null to clear).",
     )
     # Alias is intentionally omitted as it's immutable post-creation.
 
 
 # --- Data Transfer Objects (Output) ---
-
-
 class LinkResponse(BaseModel):
     """
     Schema for representing a link when returned by the API.
@@ -71,21 +86,17 @@ class LinkResponse(BaseModel):
     id: UUID4
     user_id: UUID4
     alias: str
+    # Dane z DB przychodzą jako string, Pydantic spróbuje sparsować do HttpUrl
     default_url: Optional[HttpUrl | None] = None
     total_clicks: int
     created_at: datetime
     updated_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)  # Enable ORM mode (Pydantic v2+)
-    # Pydantic v1 equivalent:
-    # class Config:
-    #     orm_mode = True
+    # Konfiguracja Pydantic v2+ dla trybu ORM (from_attributes)
+    model_config = ConfigDict(from_attributes=True)
 
 
-# --- Pagination Schema (used by List Links) ---
-# Often placed in a separate pagination.py or directly here if only used for links
-
-
+# --- Pagination Schema ---
 class PaginatedLinkResponse(BaseModel):
     """
     Schema for paginated list responses for links.

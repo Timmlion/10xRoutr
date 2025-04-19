@@ -2,19 +2,25 @@
 
 from fastapi import APIRouter
 
-# Importuj routery z poszczególnych plików endpointów
-from src.api.v1.endpoints import links, rules  # Adjusted import path
-
+# Importuj moduły links i rules z pakietu endpoints
+from src.api.v1.endpoints import links
+from src.api.v1.endpoints import rules
+from src.api.v1.endpoints import auth  # <<< ODKOMENTOWANO IMPORT
 
 # Główny router dla wersji v1 API
 api_v1_router = APIRouter()
 
-# Dołącz router dla linków pod prefiksem /links
+# Dołącz router dla linków
 api_v1_router.include_router(links.router, prefix="/links", tags=["Links"])
+
+# Dołącz router dla reguł
 api_v1_router.include_router(
     rules.router, prefix="/links/{link_id}/rules", tags=["Rules"]
 )
-# Dołącz inne routery w przyszłości
-# api_v1_router.include_router(rules.router, prefix="/links/{link_id}/rules", tags=["Rules"])
-# api_v1_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
-# api_v1_router.include_router(stats.router, prefix="/links/{link_id}/stats", tags=["Statistics"])
+
+# Dołącz router dla autentykacji
+api_v1_router.include_router(
+    auth.router, prefix="/auth", tags=["Authentication"]
+)  # <<< ODKOMENTOWANO INCLUDE
+
+# Endpointy statystyk są w links.router

@@ -6,16 +6,13 @@ from pydantic import (
     model_validator,
     ConfigDict,
     UUID4,
-    HttpUrl,
+    ValidationInfo,  # <<< Import jest poprawny
 )
 from typing import Optional, List, Any
 from datetime import datetime
 
 # Import ENUMs defined earlier
 from .enums import RuleTypeEnum, TargetTypeEnum
-
-# --- Base Model ---
-# Less useful here due to complex conditional fields in Create/Update
 
 # --- Command Models (Input) ---
 
@@ -52,7 +49,6 @@ class RuleCreate(BaseModel):
         description="Maximum clicks (positive integer) for clicks-based rules.",
     )
 
-    # Pydantic v2+ style model validator
     @model_validator(mode="after")
     def check_conditional_fields(self) -> "RuleCreate":
         """Ensure required fields are present based on rule_type and clear irrelevant fields."""
@@ -65,34 +61,29 @@ class RuleCreate(BaseModel):
                 raise ValueError(
                     'end_time must be after start_time for rule_type "time"'
                 )
-            # Clear clicks field if type is time
             self.max_clicks = None
         elif self.rule_type == RuleTypeEnum.CLICKS:
             if self.max_clicks is None:
                 raise ValueError('max_clicks is required for rule_type "clicks"')
-            # Clear time fields if type is clicks
+            if self.max_clicks <= 0:
+                raise ValueError(
+                    'max_clicks must be a positive integer for rule_type "clicks"'
+                )
             self.start_time = None
             self.end_time = None
         return self
 
     @field_validator("target_value")
-    def validate_target_value_format(cls, v: str, info: FieldValidationInfo) -> str:
+    # <<< POPRAWKA: Zmieniono typ argumentu 'info' na ValidationInfo
+    def validate_target_value_format(cls, v: str, info: ValidationInfo) -> str:
         """Validate target_value format based on target_type."""
-        # info.data holds the partially validated model data in Pydantic v2
-        if (
-            "target_type" in info.data
-            and info.data["target_type"] == TargetTypeEnum.URL
-        ):
-            # Basic check, consider using HttpUrl type for target_value if possible
-            # or a more robust validation library
-            if not (v.startswith("http://") or v.startswith("https://")):
+        target_type_field = info.data.get("target_type")
+        if target_type_field == TargetTypeEnum.URL:
+            if not v.startswith(("http://", "https://")):
                 raise ValueError(
                     'Invalid URL format for target_value when target_type is "url"'
                 )
-        # Add HTML length check here if limit is defined
-        # if 'target_type' in info.data and info.data['target_type'] == TargetTypeEnum.HTML:
-        # if len(v) > YOUR_HTML_LIMIT:
-        #     raise ValueError(f"HTML content exceeds limit of {YOUR_HTML_LIMIT}")
+        # TODO: Add HTML length validation if needed
         return v
 
 
@@ -100,8 +91,6 @@ class RuleUpdate(BaseModel):
     """
     Schema for data allowed when updating a rule.
     Used as request body for PATCH /links/{link_id}/rules/{rule_id}.
-    All fields are optional. Complex validation (dependencies between fields)
-    should primarily happen in the service layer after fetching the current rule state.
     """
 
     priority: Optional[int] = Field(
@@ -134,38 +123,41 @@ class RuleUpdate(BaseModel):
         description="New max clicks (positive integer) if rule_type is 'clicks'. Can be set to null.",
     )
 
-    # Basic validators can remain, but complex cross-field validation is deferred to service layer for PATCH
     @field_validator("priority")
+    @classmethod
     def validate_priority_positive(cls, v: Optional[int]):
+        """Validate priority is positive if provided."""
         if v is not None and v <= 0:
-            raise ValueError("priority must be positive")
+            raise ValueError("priority must be positive if provided")
         return v
 
     @field_validator("max_clicks")
+    @classmethod
     def validate_max_clicks_positive(cls, v: Optional[int | None]):
-        # Allows explicit None to clear field if rule_type changes
+        """Validate max_clicks is positive if provided."""
         if v is not None and v <= 0:
             raise ValueError("max_clicks must be positive if provided")
         return v
 
-    # Limited target_value validation - service layer needs full context
     @field_validator("target_value")
+    # <<< POPRAWKA: Zmieniono typ argumentu 'info' na ValidationInfo
     def validate_target_value_update(
-        cls, v: Optional[str], info: FieldValidationInfo
+        cls, v: Optional[str], info: ValidationInfo
     ) -> Optional[str]:
-        # This can only validate if target_type is *also* being updated in the same request
-        target_type = (
-            info.data.get("target_type") if "target_type" in info.data else None
-        )  # Or fetch current type in service
+        """
+        Limited validation for target_value during update.
+        Checks URL format only if target_type is also being updated to 'url'.
+        """
+        target_type_in_update = info.data.get("target_type")
         if (
-            target_type == TargetTypeEnum.URL
+            target_type_in_update == TargetTypeEnum.URL
             and v is not None
-            and not (v.startswith("http://") or v.startswith("https://"))
+            and not v.startswith(("http://", "https://"))
         ):
             raise ValueError(
-                'Invalid URL format for target_value when target_type is "url"'
+                'Invalid URL format for target_value when target_type is updated to "url"'
             )
-        # Add HTML length check here
+        # TODO: Add HTML length validation
         return v
 
 
@@ -175,9 +167,6 @@ class RuleUpdate(BaseModel):
 class RuleResponse(BaseModel):
     """
     Schema for representing a rule when returned by the API.
-    Used as response body for GET /links/{link_id}/rules/{rule_id},
-    POST /links/{link_id}/rules, PATCH /links/{link_id}/rules/{rule_id},
-    and as items in GET /links/{link_id}/rules list.
     """
 
     id: UUID4
@@ -193,7 +182,4 @@ class RuleResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)  # Enable ORM mode (Pydantic v2+)
-    # Pydantic v1 equivalent:
-    # class Config:
-    #     orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

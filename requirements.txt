@@ -49,3 +49,8 @@ uvloop==0.21.0
 watchfiles==1.0.5
 websockets==14.2
 yarl==1.19.0
+pydantic-settings
+python-multipart
+pytest
+pytest-mock
+pytest-asyncio
