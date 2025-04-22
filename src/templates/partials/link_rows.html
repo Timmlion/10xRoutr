@@ -1,0 +1,62 @@
+{# Ten plik zawiera tylko wiersze
+<tr>
+  dla tabeli linków #} {% if links %} {% for link in links %}
+</tr>
+
+<tr>
+  <td>
+    {# TODO: Zmienić link na endpoint edycji, gdy będzie gotowy #}
+    <a href="/app/links/{{ link.id }}/edit" title="Edytuj link"
+      >{{ link.alias }}</a
+    >
+  </td>
+  <td>
+    {# Pełny URL - zakładamy, że BASE_URL jest dostępne lub go hardkodujemy dla
+    MVP #} {# Lepiej byłoby przekazać BASE_URL z konfiguracji przez kontekst
+    Jinja #}
+    <a href="http://127.0.0.1:8000/{{ link.alias }}" target="_blank"
+      >http://127.0.0.1:8000/{{ link.alias }}</a
+    >
+  </td>
+  <td class="text-center">{{ link.total_clicks }}</td>
+  <td class="text-end">
+    {# Przycisk Kopiuj URL #}
+    <button
+      class="btn btn-sm btn-outline-secondary copy-url-button me-1"
+      data-url="http://127.0.0.1:8000/{{ link.alias }}"
+      title="Kopiuj URL"
+    >
+      <i class="bi bi-clipboard"></i> {# Zakładamy użycie Bootstrap Icons #}
+    </button>
+
+    {# Przycisk Edytuj #}
+    <a
+      href="/app/links/{{ link.id }}/edit"
+      class="btn btn-sm btn-outline-primary me-1"
+      title="Edytuj"
+    >
+      <i class="bi bi-pencil-square"></i>
+    </a>
+
+    {# Przycisk Usuń (z obsługą modala) #}
+    <button
+      class="btn btn-sm btn-outline-danger delete-link-button"
+      data-bs-toggle="modal"
+      data-bs-target="#confirmDeleteModal"
+      hx-delete="/api/v1/links/{{ link.id }}"
+      hx-target="closest tr"
+      hx-swap="outerHTML"
+      title="Usuń"
+    >
+      <i class="bi bi-trash"></i>
+    </button>
+  </td>
+</tr>
+{% endfor %} {% else %}
+<tr>
+  <td colspan="4" class="text-center text-muted">
+    Nie utworzyłeś jeszcze żadnych linków.
+  </td>
+</tr>
+{% endif %} {# TODO: Dodać wiersz(e) dla kontrolek paginacji, jeśli
+zaimplementowano #}

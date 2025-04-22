@@ -1,0 +1,76 @@
+{# Ten szablon renderuje nagłówek strony edycji i formularz default_url #} {#
+Oczekuje zmiennej 'link' (obiekt LinkResponse) w kontekście #} {% if link %} {#
+Wyświetlanie aliasu i przycisk Kopiuj URL #}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="mb-0">
+    Edycja Linku: <span class="text-primary fw-bold">{{ link.alias }}</span>
+  </h1>
+  {# Przycisk Kopiuj URL - działa dzięki JS z base.html #}
+  <button
+    class="btn btn-outline-secondary copy-url-button"
+    data-url="{{ request.base_url }}{{ link.alias }}"
+    {#
+    Używamy
+    base_url
+    z
+    request
+    #}
+    title="Kopiuj URL"
+  >
+    <i class="bi bi-clipboard me-1"></i> Kopiuj Pełny URL
+  </button>
+</div>
+
+{# Formularz do edycji Default URL #}
+<div class="row mb-4">
+  <div class="col-md-8 col-lg-6">
+    {# Miejsce na komunikaty TYLKO dla tego formularza #}
+    <div id="default-url-message-area" class="mb-1"></div>
+
+    <form
+      id="default-url-form"
+      hx-patch="/api/v1/links/{{ link.id }}"
+      {#
+      Używamy
+      link.id
+      z
+      kontekstu
+      #}
+      hx-target="#default-url-message-area"
+      hx-swap="innerHTML"
+      hx-indicator="#default-url-spinner"
+    >
+      <label for="default_url" class="form-label"
+        >Domyślny URL Przekierowania</label
+      >
+      <div class="input-group">
+        <input
+          type="url"
+          class="form-control"
+          id="default_url"
+          name="default_url"
+          value="{{ link.default_url if link.default_url else '' }}"
+          placeholder="https://... (pozostaw puste, aby usunąć)"
+        />
+        <button class="btn btn-outline-primary" type="submit">
+          Zapisz Zmiany
+          <span
+            id="default-url-spinner"
+            class="htmx-indicator spinner-border spinner-border-sm"
+            role="status"
+            aria-hidden="true"
+          ></span>
+        </button>
+      </div>
+      <div id="defaultUrlHelp" class="form-text">
+        URL używany, gdy żadna reguła nie pasuje.
+      </div>
+    </form>
+  </div>
+</div>
+
+{% else %} {# Komunikat, jeśli z jakiegoś powodu link nie został załadowany #}
+<div class="alert alert-warning" role="alert">
+  Nie udało się załadować danych linku.
+</div>
+{% endif %}

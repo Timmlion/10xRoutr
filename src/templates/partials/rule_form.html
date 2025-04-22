@@ -1,0 +1,262 @@
+{# Oczekuje: link_id, request. Opcjonalnie: rule (obiekt RuleResponse dla edycji) #}
+{# Zmienna 'rule' będzie None dla formularza tworzenia nowej reguły #}
+{% set is_edit = rule is not none %} {# Flaga pomocnicza #}
+
+{# Dodajemy ID do formularza, aby skrypt mógł go znaleźć po ID, jeśli `this` w evencie nie zadziała #}
+<form id="rule-form-{{ link_id }}{{ '-' ~ rule.id if is_edit else '-new' }}"
+      {# Ustawiamy metodę i URL dynamicznie w zależności od tego, czy edytujemy #}
+      {% if is_edit %}
+      hx-patch="/api/v1/links/{{ link_id }}/rules/{{ rule.id }}"
+      {% else %}
+      hx-post="/api/v1/links/{{ link_id }}/rules"
+      {% endif %}
+      hx-target="#rules-content-area" {# Cel: odświeżenie listy reguł po sukcesie #}
+      hx-swap="innerHTML" {# Zastąp całą listę nową wersją #}
+      hx-indicator="#rule-form-spinner-{{ rule.id if is_edit else 'new' }}" {# Unikalny wskaźnik #}
+      {# Listener dodany przez JS poniżej #}
+>
+    <div class="modal-header">
+        <h5 class="modal-title" id="ruleEditModalLabel-{{ rule.id if is_edit else 'new' }}">
+            {% if is_edit %}Edytuj Regułę (Priorytet: {{ rule.priority }}){% else %}Dodaj Nową Regułę{% endif %}
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+    </div>
+    <div class="modal-body">
+        {# Miejsce na komunikaty o błędach z tego formularza #}
+        <div id="rule-form-message-area-{{ rule.id if is_edit else 'new' }}" class="mb-3"></div>
+
+        {# ----- Pola Formularza ----- #}
+
+        {# Priorytet #}
+        <div class="mb-3 row">
+            <label for="priority-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Priorytet <span class="text-danger">*</span></label>
+            <div class="col-sm-9">
+                 {# Używamy unikalnych ID dla pól, aby Flatpickr i JS działały poprawnie #}
+                 <input type="number" class="form-control" id="priority-{{ rule.id if is_edit else 'new' }}" name="priority" required min="1"
+                       value="{{ rule.priority if is_edit else '' }}" placeholder="1">
+                 <div class="form-text">Niższa liczba = wyższy priorytet. Musi być unikalny.</div>
+            </div>
+        </div>
+
+        {# Typ Reguły (select) #}
+        <div class="mb-3 row">
+             <label for="rule_type-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Typ Reguły <span class="text-danger">*</span></label>
+             <div class="col-sm-9">
+                <select class="form-select" id="rule_type-{{ rule.id if is_edit else 'new' }}" name="rule_type" required onchange="toggleRuleFields(this.closest('form'))"> {# Przekazujemy formularz do funkcji JS #}
+                    <option value="time" {% if is_edit and rule.rule_type == 'time' %}selected{% endif %}>Czasowa</option>
+                    <option value="clicks" {% if is_edit and rule.rule_type == 'clicks' %}selected{% endif %}>Ilościowa</option>
+                </select>
+             </div>
+        </div>
+
+        {# ----- Pola Warunkowe ----- #}
+        {# Dodajemy klasę 'rule-fields-container' dla łatwiejszego znalezienia przez JS #}
+        <div class="rule-fields-container">
+            {# Pola dla Reguły Czasowej #}
+            <div id="time-fields-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-fields">
+                 <div class="mb-3 row">
+                     <label for="start_time-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Czas Start (UTC) <span class="text-danger">*</span></label>
+                     <div class="col-sm-9">
+                        <input type="text" class="form-control flatpickr-datetime" id="start_time-{{ rule.id if is_edit else 'new' }}" name="start_time"
+                               value="{{ rule.start_time.strftime('%Y-%m-%d %H:%M') if is_edit and rule.start_time else '' }}" placeholder="YYYY-MM-DD HH:MM"> {# Użyto strftime dla formatu #}
+                     </div>
+                 </div>
+                 <div class="mb-3 row">
+                     <label for="end_time-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Czas Koniec (UTC) <span class="text-danger">*</span></label>
+                     <div class="col-sm-9">
+                         <input type="text" class="form-control flatpickr-datetime" id="end_time-{{ rule.id if is_edit else 'new' }}" name="end_time"
+                                value="{{ rule.end_time.strftime('%Y-%m-%d %H:%M') if is_edit and rule.end_time else '' }}" placeholder="YYYY-MM-DD HH:MM">
+                     </div>
+                 </div>
+            </div>
+
+            {# Pole dla Reguły Ilościowej #}
+            <div id="clicks-fields-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-fields">
+                 <div class="mb-3 row">
+                     <label for="max_clicks-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Max Kliknięć <span class="text-danger">*</span></label>
+                     <div class="col-sm-9">
+                        <input type="number" class="form-control" id="max_clicks-{{ rule.id if is_edit else 'new' }}" name="max_clicks" min="1"
+                               value="{{ rule.max_clicks if is_edit and rule.max_clicks else '' }}" placeholder="100">
+                         <div class="form-text">Limit kliknięć dla tej reguły.</div>
+                     </div>
+                </div>
+            </div>
+        </div> {# Koniec rule-fields-container #}
+
+        {# ----- Pola Celu ----- #}
+
+        {# Typ Celu (select) #}
+         <div class="mb-3 row">
+             <label for="target_type-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Typ Celu <span class="text-danger">*</span></label>
+             <div class="col-sm-9">
+                <select class="form-select" id="target_type-{{ rule.id if is_edit else 'new' }}" name="target_type" required onchange="toggleTargetFields(this.closest('form'))"> {# Przekazujemy formularz #}
+                    <option value="url" {% if not is_edit or rule.target_type == 'url' %}selected{% endif %}>Zewnętrzny URL</option>
+                    <option value="html" {% if is_edit and rule.target_type == 'html' %}selected{% endif %}>Własny HTML</option>
+                </select>
+             </div>
+        </div>
+
+        {# Dodajemy klasę 'target-fields-container' #}
+        <div class="target-fields-container">
+            {# Pole dla Celu URL #}
+            <div id="target-url-field-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-target-fields">
+                <label for="target_value_url-{{ rule.id if is_edit else 'new' }}" class="form-label">Adres URL Celu <span class="text-danger">*</span></label>
+                <input type="url" class="form-control" id="target_value_url-{{ rule.id if is_edit else 'new' }}" name="target_value"
+                       value="{{ rule.target_value if is_edit and rule.target_type == 'url' else '' }}" placeholder="https://example.com/promo">
+            </div>
+
+            {# Pole dla Celu HTML #}
+            <div id="target-html-field-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-target-fields">
+                 <label for="target_value_html-{{ rule.id if is_edit else 'new' }}" class="form-label">Kod HTML Celu <span class="text-danger">*</span></label>
+                 <textarea class="form-control" id="target_value_html-{{ rule.id if is_edit else 'new' }}" name="target_value" rows="6" placeholder="<html>...</html>">{{ rule.target_value if is_edit and rule.target_type == 'html' else '' }}</textarea>
+                 <div class="form-text">Wklej tutaj swój kod HTML.</div>
+            </div>
+        </div> {# Koniec target-fields-container #}
+
+    </div> {# Koniec modal-body #}
+    <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
+        <button type="submit" class="btn btn-primary">
+            {# Unikalny ID dla spinnera #}
+            <span id="rule-form-spinner-{{ rule.id if is_edit else 'new' }}" class="htmx-indicator spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+            {% if is_edit %}Zapisz Zmiany{% else %}Utwórz Regułę{% endif %}
+        </button>
+    </div>
+</form>
+
+{# --- Skrypty dla tego formularza --- #}
+{# Używamy unikalnego ID formularza w selektorach i listenerach #}
+<script>
+ (function() {
+    const formId = "rule-form-{{ link_id }}{{ '-' ~ rule.id if is_edit else '-new' }}";
+    const formElement = document.getElementById(formId);
+    if (!formElement) {
+        console.error("Rule form element not found:", formId);
+        return;
+    }
+
+    console.log("Initializing scripts for form:", formId);
+
+    // --- Inicjalizacja Flatpickr ---
+    const datetimePickers = formElement.querySelectorAll('.flatpickr-datetime');
+    flatpickr(datetimePickers, {
+        enableTime: true,
+        dateFormat: "Y-m-d H:i",
+        time_24hr: true,
+        allowInput: true,
+         // Ustawienie domyślnej daty dla tworzenia nowej reguły
+        defaultDate: "{% if not is_edit %}{{ now().strftime('%Y-%m-%d %H:%M') }}{% endif %}" // Tylko jeśli nie edytujemy
+    });
+
+    // --- Funkcje przełączające widoczność pól ---
+    // Modyfikujemy funkcje, aby operowały na elementach wewnątrz konkretnego formularza
+    window.toggleRuleFields = function(form) {
+        if (!form) return;
+        const ruleTypeSelect = form.querySelector('select[name="rule_type"]');
+        const container = form.querySelector('.rule-fields-container');
+        if (!ruleTypeSelect || !container) return;
+
+        const ruleType = ruleTypeSelect.value;
+        const timeFields = container.querySelector('.conditional-fields[id^="time-fields"]');
+        const clicksFields = container.querySelector('.conditional-fields[id^="clicks-fields"]');
+        const startTimeInput = timeFields ? timeFields.querySelector('input[name="start_time"]') : null;
+        const endTimeInput = timeFields ? timeFields.querySelector('input[name="end_time"]') : null;
+        const maxClicksInput = clicksFields ? clicksFields.querySelector('input[name="max_clicks"]') : null;
+
+        if (timeFields) timeFields.style.display = (ruleType === 'time') ? '' : 'none';
+        if (clicksFields) clicksFields.style.display = (ruleType === 'clicks') ? '' : 'none';
+
+        if (startTimeInput) startTimeInput.required = (ruleType === 'time');
+        if (endTimeInput) endTimeInput.required = (ruleType === 'time');
+        if (maxClicksInput) maxClicksInput.required = (ruleType === 'clicks');
+    }
+
+    window.toggleTargetFields = function(form) {
+         if (!form) return;
+        const targetTypeSelect = form.querySelector('select[name="target_type"]');
+        const container = form.querySelector('.target-fields-container');
+         if (!targetTypeSelect || !container) return;
+
+        const targetType = targetTypeSelect.value;
+        const targetUrlField = container.querySelector('.conditional-target-fields[id^="target-url-field"]');
+        const targetHtmlField = container.querySelector('.conditional-target-fields[id^="target-html-field"]');
+        const targetUrlInput = targetUrlField ? targetUrlField.querySelector('input[name="target_value"], input[name=""]') : null; // Znajdź input niezależnie od name
+        const targetHtmlTextarea = targetHtmlField ? targetHtmlField.querySelector('textarea[name="target_value"], textarea[name=""]') : null; // Znajdź textarea
+
+        if (targetUrlField) targetUrlField.style.display = (targetType === 'url') ? '' : 'none';
+        if (targetHtmlField) targetHtmlField.style.display = (targetType === 'html') ? '' : 'none';
+
+        // Ustawiamy atrybuty 'name' i 'required' dynamicznie
+        if (targetUrlInput) {
+            targetUrlInput.name = (targetType === 'url') ? 'target_value' : '';
+            targetUrlInput.required = (targetType === 'url');
+        }
+         if (targetHtmlTextarea) {
+            targetHtmlTextarea.name = (targetType === 'html') ? 'target_value' : '';
+            targetHtmlTextarea.required = (targetType === 'html');
+         }
+    }
+
+    // --- Uruchomienie funkcji przełączających dla załadowanego formularza ---
+    // Wywołujemy bezpośrednio, bo skrypt jest na końcu partiala
+    toggleRuleFields(formElement);
+    toggleTargetFields(formElement);
+
+    // --- Obsługa odpowiedzi formularza HTMX ---
+     formElement.addEventListener('htmx:afterRequest', function(evt) {
+         // Upewnij się, że event pochodzi z tego konkretnego formularza
+         if (evt.target !== formElement) {
+             return;
+         }
+
+         const xhr = evt.detail.xhr;
+         // Celujemy w konkretny message area dla tego formularza
+         const messageArea = formElement.querySelector('[id^="rule-form-message-area"]');
+         if (!messageArea) return; // Zabezpieczenie
+
+         messageArea.innerHTML = ''; // Wyczyść poprzednie
+
+         if (evt.detail.successful) {
+             console.log('Rule form submitted successfully for form:', formId);
+             // Sukces - zamknij modal
+             const modalElement = formElement.closest('.modal'); // Znajdź nadrzędny modal
+             if (modalElement) {
+                 const modalInstance = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+                 modalInstance.hide();
+             } else {
+                 console.error("Could not find parent modal to hide.");
+             }
+             // Odświeżenie listy reguł jest obsługiwane przez hx-target/hx-swap formularza
+         } else {
+             // Błąd - wyświetl komunikat
+             console.error('Rule form submission failed for form:', formId, evt.detail);
+             let userFriendlyMessage = 'Wystąpił błąd podczas zapisu reguły.';
+              try {
+                const errorResponse = JSON.parse(xhr.responseText);
+                 if (xhr.status === 422 && errorResponse.detail && Array.isArray(errorResponse.detail)) {
+                    userFriendlyMessage = 'Błąd walidacji danych:<ul>';
+                    errorResponse.detail.forEach(err => {
+                        const field = err.loc && err.loc.length > 1 ? `Pole '${err.loc.join('.')}'` : 'Błąd';
+                        const msg = err.msg || 'Nieprawidłowa wartość.';
+                        userFriendlyMessage += `<li>${field}: ${msg}</li>`;
+                    });
+                    userFriendlyMessage += '</ul>';
+                } else if (errorResponse.detail && typeof errorResponse.detail === 'string') {
+                     userFriendlyMessage = errorResponse.detail; // Np. 409 Conflict
+                } else {
+                     userFriendlyMessage = `Błąd serwera (status: ${xhr.status}).`;
+                }
+            } catch (e) {
+                 userFriendlyMessage = `Błąd serwera (status: ${xhr.status}).`;
+            }
+             // Używamy textContent dla bezpieczeństwa, chyba że potrzebujemy HTML (jak w liście błędów 422)
+             const alertDiv = document.createElement('div');
+             alertDiv.className = "alert alert-danger"; // Usunięto dismissible dla uproszczenia
+             alertDiv.setAttribute('role', 'alert');
+             alertDiv.innerHTML = userFriendlyMessage; // Pozwalamy na HTML dla listy błędów
+             messageArea.appendChild(alertDiv);
+         }
+     });
+
+ })(); // IIFE - Immediately Invoked Function Expression to limit scope
+</script>

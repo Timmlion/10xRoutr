@@ -1,0 +1,167 @@
+{% extends "base.html" %} {% block title %}Moje Linki - routr{% endblock %} {%
+block navbar %} {# Dołączamy navbar dla zalogowanego użytkownika #} {% include
+"partials/navbar.html" %} {% endblock %} {% block content %}
+<div class="container mt-4">
+  <h1 class="mb-4">Moje Linki routr</h1>
+
+  {# Przycisk tworzenia linku jest teraz w navbarze, ale można dodać też tutaj,
+  jeśli chcemy #} {#
+  <a
+    href="{{ url_for('render_create_link_form') }}"
+    class="btn btn-success mb-3"
+    >Utwórz nowy link</a
+  >
+  #}
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th scope="col">Alias</th>
+          <th scope="col">Pełny URL</th>
+          <th scope="col" class="text-center">Kliknięcia</th>
+          <th scope="col" class="text-end">Akcje</th>
+        </tr>
+      </thead>
+      <tbody
+        hx-get="/api/v1/links/list-partial?page=1&page_size=20"
+        hx-trigger="load"
+        hx-swap="innerHTML"
+        hx-indicator="#link-list-loading"
+      >
+        {# --- Początkowy stan / Wskaźnik ładowania --- #}
+        <tr>
+          <td colspan="4" class="text-center">
+            <div
+              id="link-list-loading"
+              class="htmx-indicator spinner-border spinner-border-sm"
+              role="status"
+            >
+              <span class="visually-hidden">Ładowanie linków...</span>
+            </div>
+            <span class="no-indicator">Ładowanie linków...</span> {# Pokaż
+            tekst, gdy wskaźnik jest ukryty #} {# Komunikat o braku linków
+            zostanie wstawiony przez API, jeśli lista będzie pusta #}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {# TODO: Dodać logikę paginacji, jeśli API list-partial ją wspiera #}
+</div>
+
+{# --- Prosty Modal Potwierdzenia Usunięcia (można go umieścić gdzieś globalnie
+w base.html) --- #}
+<div
+  class="modal fade"
+  id="confirmDeleteModal"
+  tabindex="-1"
+  aria-labelledby="confirmDeleteModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmDeleteModalLabel">
+          Potwierdź usunięcie
+        </h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        Czy na pewno chcesz usunąć ten element? Tej operacji nie można cofnąć.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Anuluj
+        </button>
+        {# Ten przycisk będzie miał dynamicznie ustawiane atrybuty HTMX przez JS
+        #}
+        <button type="button" class="btn btn-danger" id="confirmDeleteButton">
+          Usuń
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block scripts %} {# Dodajemy skrypt do obsługi modala
+potwierdzenia #}
+<script>
+  const confirmDeleteModalElement =
+    document.getElementById("confirmDeleteModal");
+  if (confirmDeleteModalElement) {
+    const confirmDeleteModal = new bootstrap.Modal(confirmDeleteModalElement);
+    const confirmDeleteButton = document.getElementById("confirmDeleteButton");
+
+    document.body.addEventListener("htmx:configRequest", function (evt) {
+      // Sprawdzamy, czy kliknięto przycisk usuwania z atrybutem data-bs-toggle="modal"
+      const triggerElement = evt.detail.elt;
+      if (
+        evt.detail.verb === "delete" &&
+        triggerElement.getAttribute("data-bs-toggle") === "modal"
+      ) {
+        // Pobieramy URL i target z oryginalnego przycisku
+        const deleteUrl = triggerElement.getAttribute("hx-delete");
+        const deleteTarget =
+          triggerElement.getAttribute("hx-target") || "closest tr"; // Domyślnie usuń wiersz
+        const deleteSwap =
+          triggerElement.getAttribute("hx-swap") || "outerHTML"; // Domyślnie zamień
+
+        // Ustawiamy atrybuty HTMX na przycisku potwierdzenia w modalu
+        confirmDeleteButton.setAttribute("hx-delete", deleteUrl);
+        confirmDeleteButton.setAttribute("hx-target", deleteTarget);
+        confirmDeleteButton.setAttribute("hx-swap", deleteSwap);
+
+        // Dodajemy atrybut, aby zamknąć modal po sukcesie
+        confirmDeleteButton.setAttribute(
+          "hx-on::after-request",
+          'if(event.detail.successful) bootstrap.Modal.getInstance(document.getElementById("confirmDeleteModal")).hide()'
+        );
+
+        // Pokaż modal
+        confirmDeleteModal.show();
+
+        // Anulujemy oryginalne żądanie HTMX z przycisku
+        evt.preventDefault();
+        evt.stopPropagation(); // Dodatkowe zabezpieczenie
+      }
+    });
+
+    // Resetuj atrybuty przycisku po zamknięciu modala, aby uniknąć przypadkowego użycia
+    confirmDeleteModalElement.addEventListener("hidden.bs.modal", function () {
+      confirmDeleteButton.removeAttribute("hx-delete");
+      confirmDeleteButton.removeAttribute("hx-target");
+      confirmDeleteButton.removeAttribute("hx-swap");
+      confirmDeleteButton.removeAttribute("hx-on::after-request");
+    });
+  }
+  // Logika kopiowania do schowka
+  document.body.addEventListener("click", function (event) {
+    if (event.target.matches(".copy-url-button")) {
+      const urlToCopy = event.target.getAttribute("data-url");
+      if (urlToCopy) {
+        navigator.clipboard
+          .writeText(urlToCopy)
+          .then(() => {
+            console.log("URL copied to clipboard:", urlToCopy); // Log MVP
+            // Opcjonalnie: pokaż chwilowy tooltip/komunikat o sukcesie
+            const originalText = event.target.innerHTML;
+            event.target.textContent = "Skopiowano!";
+            setTimeout(() => {
+              event.target.innerHTML = originalText;
+            }, 1500);
+          })
+          .catch((err) => {
+            console.error("Failed to copy URL: ", err); // Log MVP
+            // Opcjonalnie: pokaż komunikat o błędzie
+          });
+      }
+    }
+  });
+</script>
+{% endblock %}

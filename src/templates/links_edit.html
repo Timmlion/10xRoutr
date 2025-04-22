@@ -1,0 +1,175 @@
+{% extends "base.html" %} {% block title %}Edycja Linku - routr{% endblock %} {%
+block navbar %} {% include "partials/navbar.html" %} {% endblock %} {% block
+content %}
+<div class="container mt-4">
+  {# Kontener na dane nagłówka - ładowane przez HTMX #}
+  <div
+    id="link-header-container"
+    hx-get="/api/v1/links/{{ link_id }}/edit-header-partial"
+    hx-trigger="load"
+    hx-swap="innerHTML"
+    hx-target="this"
+    hx-indicator="#link-header-loading-indicator"
+  >
+    {# Wskaźnik ładowania dla nagłówka #}
+    <div id="link-header-loading-indicator" class="text-center p-4">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Ładowanie danych linku...</span>
+      </div>
+      <p class="text-muted mt-2">Ładowanie danych linku...</p>
+    </div>
+  </div>
+
+  {# Zakładki dla Reguł i Statystyk #}
+  <ul class="nav nav-tabs mb-3" id="linkEditTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button
+        class="nav-link active"
+        id="rules-tab-button"
+        data-bs-toggle="tab"
+        data-bs-target="#rules-tab-pane"
+        type="button"
+        role="tab"
+        aria-controls="rules-tab-pane"
+        aria-selected="true"
+      >
+        <i class="bi bi-list-ul me-1"></i> Reguły Przekierowań
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button
+        class="nav-link"
+        id="stats-tab-button"
+        data-bs-toggle="tab"
+        data-bs-target="#stats-tab-pane"
+        type="button"
+        role="tab"
+        aria-controls="stats-tab-pane"
+        aria-selected="false"
+      >
+        <i class="bi bi-bar-chart-line me-1"></i> Statystyki
+      </button>
+    </li>
+  </ul>
+  <div class="tab-content" id="linkEditTabsContent">
+    {# --- Zakładka Reguły --- #}
+    <div
+      class="tab-pane fade show active"
+      id="rules-tab-pane"
+      role="tabpanel"
+      aria-labelledby="rules-tab-button"
+      tabindex="0"
+    >
+      {# Kontener na reguły - ładowany przy aktywacji zakładki #} {# Komentarze
+      przeniesione poza tag otwierający #} {# Endpoint API zwracający HTML reguł
+      #} {# Czeka na niestandardowy trigger 'loadRules' #}
+      <div
+        id="rules-content-area"
+        hx-get="/api/v1/links/{{ link_id }}/rules/list-partial"
+        hx-trigger="loadRules from:body"
+        hx-swap="innerHTML"
+        hx-indicator="#rules-loading-indicator"
+        {#
+        id
+        wskaźnika
+        musi
+        pasować
+        #}
+        hx-target="this"
+      >
+        {# Wskaźnik ładowania dla reguł #}
+        <div
+          id="rules-loading-indicator"
+          {#
+          Upewnij
+          się,
+          że
+          to
+          id
+          jest
+          poprawne
+          #}
+          class="htmx-indicator text-center p-4"
+        >
+          <div class="spinner-border text-secondary" role="status">
+            <span class="visually-hidden">Ładowanie reguł...</span>
+          </div>
+          <p class="text-muted mt-2">Ładowanie reguł...</p>
+        </div>
+      </div>
+    </div>
+
+    {# --- Zakładka Statystyki --- #}
+    <div
+      class="tab-pane fade"
+      id="stats-tab-pane"
+      role="tabpanel"
+      aria-labelledby="stats-tab-button"
+      tabindex="0"
+    >
+      {# Kontener na statystyki - ładowany przy aktywacji zakładki #} {#
+      Komentarze przeniesione poza tag otwierający #} {# Endpoint API zwracający
+      HTML statystyk #} {# Czeka na niestandardowy trigger 'loadStats' #}
+      <div
+        id="stats-content-area"
+        hx-get="/api/v1/links/{{ link_id }}/stats-partial"
+        hx-trigger="loadStats from:body"
+        hx-swap="innerHTML"
+        hx-indicator="#stats-loading-indicator"
+        hx-target="this"
+      >
+        {# Wskaźnik ładowania dla statystyk #}
+        <div
+          id="stats-loading-indicator"
+          class="htmx-indicator text-center p-4"
+        >
+          <div class="spinner-border text-secondary" role="status">
+            <span class="visually-hidden">Ładowanie statystyk...</span>
+          </div>
+          <p class="text-muted mt-2">Ładowanie statystyk...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{# Koniec kontenera głównego #} {% endblock %} {% block scripts %} {# Skrypt do
+obsługi odpowiedzi z aktualizacji Default URL #}
+<script>
+  document.body.addEventListener("htmx:beforeSwap", function (evt) {
+    // Obsługa odpowiedzi z formularza default_url
+    if (evt.detail.target.id === "default-url-message-area") {
+      // ... (logika bez zmian) ...
+      const messageArea = evt.detail.target;
+      messageArea.innerHTML = ""; // Wyczyść poprzednie komunikaty
+      // ... (reszta logiki obsługi błędów/sukcesu dla default_url) ...
+    }
+  });
+
+  // Skrypt do wyzwalania ładowania zawartości zakładek
+  document.addEventListener("DOMContentLoaded", () => {
+    const rulesTabButton = document.getElementById("rules-tab-button");
+    const statsTabButton = document.getElementById("stats-tab-button");
+
+    // Wyzwól ładowanie dla domyślnie aktywnej zakładki (Reguły) zaraz po załadowaniu strony
+    setTimeout(() => {
+      console.log("Triggering initial load for Rules tab");
+      htmx.trigger(document.body, "loadRules", {});
+    }, 100); // Opóźnienie w ms
+
+    // Nasłuchuj na zdarzenie Bootstrapa pokazania zakładki
+    if (rulesTabButton) {
+      rulesTabButton.addEventListener("show.bs.tab", (event) => {
+        console.log("Rules tab shown, triggering loadRules");
+        htmx.trigger(document.body, "loadRules", {});
+      });
+    }
+
+    if (statsTabButton) {
+      statsTabButton.addEventListener("show.bs.tab", (event) => {
+        console.log("Stats tab shown, triggering loadStats");
+        htmx.trigger(document.body, "loadStats", {});
+      });
+    }
+  });
+</script>
+{% endblock %}

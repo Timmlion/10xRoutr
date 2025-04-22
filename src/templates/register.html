@@ -1,0 +1,157 @@
+{% extends "base.html" %} {% block title %}Rejestracja - routr{% endblock %} {%
+block header %}
+<!-- Opcjonalny link do logowania w rogu -->
+<div class="top-right-link">
+  <a href="{{ url_for('render_login_page') }}" class="btn btn-outline-secondary"
+    >Zaloguj się</a
+  >
+</div>
+{% endblock %} {% block content %}
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title text-center mb-4">Zarejestruj się</h2>
+
+          <!-- Miejsce na komunikaty o sukcesie/błędach -->
+          <div id="message-area" class="alert d-none" role="alert">
+            <!-- Komunikaty będą tutaj wstawiane przez JS -->
+          </div>
+
+          <form
+            id="register-form"
+            hx-post="/api/v1/auth/register"
+            hx-trigger="submit"
+            hx-encoding="application/json"
+            {#
+            API
+            oczekuje
+            JSON
+            #}
+            hx-swap="none"
+          >
+            {# Nie chcemy domyślnej podmiany HTML #}
+
+            <div class="mb-3">
+              <label for="email" class="form-label">Adres E-mail</label>
+              <input
+                type="email"
+                class="form-control"
+                id="email"
+                name="email"
+                required
+              />
+            </div>
+            <div class="mb-3">
+              <label for="password" class="form-label">Hasło</label>
+              <input
+                type="password"
+                class="form-control"
+                id="password"
+                name="password"
+                required
+                minlength="6"
+              />
+              {# Dodajemy minlength dla podstawowej walidacji #}
+              <div id="passwordHelpBlock" class="form-text">
+                Hasło musi mieć co najmniej 6 znaków. {# Podstawowa informacja
+                #}
+              </div>
+            </div>
+            {# Można dodać potwierdzenie hasła i walidację JS, ale pomijamy w
+            MVP #}
+            <button type="submit" class="btn btn-primary w-100">
+              Zarejestruj
+            </button>
+          </form>
+          <div class="text-center mt-3">
+            <small
+              >Masz już konto?
+              <a href="{{ url_for('render_login_page') }}"
+                >Zaloguj się</a
+              ></small
+            >
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block scripts %}
+<script>
+  // Potrzebujemy funkcji do konwersji danych formularza na JSON dla hx-post
+  htmx.defineExtension("json-form", {
+    onEvent: function (name, evt) {
+      if (name === "htmx:configRequest") {
+        if (
+          evt.detail.verb === "post" &&
+          evt.target.matches("#register-form")
+        ) {
+          evt.detail.headers["Content-Type"] = "application/json";
+          const formData = new FormData(evt.target);
+          const object = {};
+          formData.forEach((value, key) => (object[key] = value));
+          evt.detail.parameters = JSON.stringify(object);
+        }
+      }
+    },
+  });
+
+  document.body.addEventListener("htmx:afterOnLoad", function (evt) {
+    const form = document.getElementById("register-form");
+    if (evt.target === form) {
+      const xhr = evt.detail.xhr;
+      const messageArea = document.getElementById("message-area");
+
+      // Resetujemy klasy i treść
+      messageArea.classList.remove("alert-success", "alert-danger");
+      messageArea.classList.add("d-none");
+      messageArea.textContent = "";
+
+      if (xhr.status === 201) {
+        // Sukces - rejestracja pomyślna
+        console.log("Registration successful."); // Log MVP
+        messageArea.textContent =
+          "Rejestracja pomyślna! Możesz się teraz zalogować.";
+        messageArea.classList.add("alert-success");
+        messageArea.classList.remove("d-none");
+        // Czyścimy formularz po sukcesie
+        form.reset();
+        // Opcjonalnie: przekierowanie na logowanie po chwili
+        setTimeout(() => {
+          window.location.href = "{{ url_for('render_login_page') }}";
+        }, 3000); // Przekierowanie po 3 sekundach
+      } else {
+        // Błąd rejestracji (np. 400, 409, 500)
+        let detailMessage = "Wystąpił błąd podczas rejestracji.";
+        try {
+          const errorResponse = JSON.parse(xhr.responseText);
+          if (errorResponse.detail) {
+            detailMessage = errorResponse.detail;
+          }
+        } catch (e) {
+          detailMessage = `Błąd serwera (status: ${xhr.status})`;
+        }
+        console.error(
+          `Registration failed (status ${xhr.status}): ${detailMessage}`
+        ); // Log MVP
+        messageArea.textContent = detailMessage;
+        messageArea.classList.add("alert-danger");
+        messageArea.classList.remove("d-none");
+      }
+    }
+  });
+</script>
+{# Musimy dodać atrybut hx-ext="json-form" do formularza rejestracji #}
+<script>
+  // Dodajemy rozszerzenie do formularza po załadowaniu DOM
+  document.addEventListener("DOMContentLoaded", (event) => {
+    const registerForm = document.getElementById("register-form");
+    if (registerForm) {
+      registerForm.setAttribute("hx-ext", "json-form");
+    }
+  });
+</script>
+
+{% endblock %}

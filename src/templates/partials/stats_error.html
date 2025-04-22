@@ -1,0 +1,5 @@
+{# Wyświetla komunikat błędu w miejscu statystyk #}
+<div class="alert alert-danger text-center" role="alert">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error_message |
+  default('Wystąpił błąd podczas ładowania statystyk.') }}
+</div>

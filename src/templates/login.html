@@ -1,0 +1,125 @@
+{% extends "base.html" %} {% block title %}Logowanie - routr{% endblock %} {%
+block header %}
+<!-- Opcjonalny link do rejestracji w rogu -->
+<div class="top-right-link">
+  <a
+    href="{{ url_for('render_register_page') }}"
+    class="btn btn-outline-secondary"
+    >Zarejestruj się</a
+  >
+</div>
+{% endblock %} {% block content %}
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title text-center mb-4">Zaloguj się</h2>
+
+          <!-- Miejsce na komunikaty o błędach -->
+          <div
+            id="error-message"
+            class="alert alert-danger d-none"
+            role="alert"
+          >
+            <!-- Błędy będą tutaj wstawiane przez JS -->
+          </div>
+
+          <form
+            id="login-form"
+            hx-post="/api/v1/auth/login"
+            hx-trigger="submit"
+            hx-swap="none"
+          >
+            {# Nie chcemy domyślnej podmiany HTML przez HTMX #}
+
+            <div class="mb-3">
+              <label for="email" class="form-label">Adres E-mail</label>
+              {# Używamy 'username' jak wymaga OAuth2PasswordRequestForm #}
+              <input
+                type="email"
+                class="form-control"
+                id="email"
+                name="username"
+                required
+              />
+            </div>
+            <div class="mb-3">
+              <label for="password" class="form-label">Hasło</label>
+              <input
+                type="password"
+                class="form-control"
+                id="password"
+                name="password"
+                required
+              />
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Zaloguj</button>
+          </form>
+          <div class="text-center mt-3">
+            <small
+              >Nie masz konta?
+              <a href="{{ url_for('render_register_page') }}"
+                >Zarejestruj się</a
+              ></small
+            >
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block scripts %}
+<script>
+  document.body.addEventListener("htmx:afterOnLoad", function (evt) {
+    const form = document.getElementById("login-form");
+    // Sprawdzamy, czy event pochodzi z naszego formularza logowania
+    if (evt.target === form) {
+      const xhr = evt.detail.xhr;
+      const errorMessageDiv = document.getElementById("error-message");
+
+      // Ukrywamy poprzedni błąd na wszelki wypadek
+      errorMessageDiv.classList.add("d-none");
+      errorMessageDiv.textContent = "";
+
+      if (xhr.status === 200) {
+        // Sukces - logowanie pomyślne
+        try {
+          const response = JSON.parse(xhr.responseText);
+          if (response.access_token) {
+            console.log("Login successful, saving token..."); // Log MVP
+            // Zapisujemy token w sessionStorage
+            sessionStorage.setItem("routr_access_token", response.access_token);
+            // Przekierowujemy na dashboard
+            window.location.href = "/app/links"; // Zakładamy, że /app/links to dashboard
+          } else {
+            errorMessageDiv.textContent =
+              "Błąd odpowiedzi serwera: Brak tokenu dostępu.";
+            errorMessageDiv.classList.remove("d-none");
+          }
+        } catch (e) {
+          console.error("Failed to parse login response:", e); // Log MVP
+          errorMessageDiv.textContent =
+            "Błąd przetwarzania odpowiedzi serwera.";
+          errorMessageDiv.classList.remove("d-none");
+        }
+      } else {
+        // Błąd logowania (np. 401, 500)
+        let detailMessage = "Wystąpił nieznany błąd.";
+        try {
+          const errorResponse = JSON.parse(xhr.responseText);
+          if (errorResponse.detail) {
+            detailMessage = errorResponse.detail;
+          }
+        } catch (e) {
+          // Jeśli odpowiedź nie jest JSON lub jest pusta
+          detailMessage = `Błąd serwera (status: ${xhr.status})`;
+        }
+        console.error(`Login failed (status ${xhr.status}): ${detailMessage}`); // Log MVP
+        errorMessageDiv.textContent = detailMessage;
+        errorMessageDiv.classList.remove("d-none");
+      }
+    }
+  });
+</script>
+{% endblock %}

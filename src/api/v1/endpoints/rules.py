@@ -1,8 +1,9 @@
-# src/api/v1/endpoints/rules.py
+# src/api/v1/endpoints/rules.py (Corrected - Removed Path parameter for link_id where appropriate)
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status, Request, Response
+from fastapi.templating import Jinja2Templates
 from uuid import UUID
-from typing import List, Union, Optional  # Dodano Optional
+from typing import List, Optional
 import traceback
 
 # Import modeli Pydantic (DTOs)
@@ -13,31 +14,141 @@ from src.services.rule_service import RuleService
 from src.services.custom_exceptions import (
     DatabaseException,
     NotFoundException,
-    ParentLinkNotFoundException,
     PriorityConflictException,
     ValidationException,
     ServiceException,
 )
 
 # Import zależności
-from src.api.deps import get_current_user_id, get_rule_service
-
-# Import szablonów (dla HTMX)
-try:
-    from src.main import templates
-except ImportError:
-    templates = None
-    print(
-        "[WARNING] Jinja2Templates instance 'templates' not found in main.py. HTMX responses might not work for List Rules."
-    )
-
+from src.api.deps import get_current_user_id, get_rule_service, get_templates
 
 router = APIRouter()
 
 
-# --- Endpoint POST /links/{link_id}/rules ---
+# --- Endpoint zwracający PUSTY formularz tworzenia reguły ---
+@router.get(
+    "/create-form-partial",
+    summary="Get Rule Creation Form HTML Partial",
+    description="Returns an HTML fragment containing an empty form for creating a new rule.",
+    tags=["Rules UI Partials"],
+    include_in_schema=False,
+)
+async def get_rule_create_form_partial(
+    request: Request,
+    link_id: UUID,  # <<< Usunięto Path(...), wartość pobierana z prefiksu montowania routera
+    templates: Jinja2Templates = Depends(get_templates),
+):
+    """Renders the partial template for the rule form (empty)."""
+    print(f"Fetching create form partial for link {link_id}")
+    return templates.TemplateResponse(
+        "partials/rule_form.html",
+        {"request": request, "link_id": link_id, "rule": None},
+    )
+
+
+# --- Endpoint zwracający WYPEŁNIONY formularz edycji reguły ---
+@router.get(
+    "/{rule_id}/edit-form-partial",
+    summary="Get Rule Edit Form HTML Partial",
+    description="Returns an HTML fragment containing a pre-filled form for editing an existing rule.",
+    tags=["Rules UI Partials"],
+    include_in_schema=False,
+)
+async def get_rule_edit_form_partial(
+    request: Request,
+    link_id: UUID,  # <<< Usunięto Path(...)
+    rule_id: UUID = Path(
+        ..., description="The ID of the rule to edit"
+    ),  # rule_id jest częścią ścieżki względnej
+    user_id: UUID = Depends(get_current_user_id),
+    rule_service: RuleService = Depends(get_rule_service),
+    templates: Jinja2Templates = Depends(get_templates),
+):
+    """Fetches rule data and renders the rule form partial template pre-filled."""
+    print(
+        f"Fetching edit form partial for rule {rule_id} on link {link_id} by user {user_id}"
+    )
+    try:
+        rule = await rule_service.get_rule_details(
+            link_id=link_id, rule_id=rule_id, user_id=user_id
+        )
+        return templates.TemplateResponse(
+            "partials/rule_form.html",
+            {"request": request, "link_id": link_id, "rule": rule},
+        )
+    except NotFoundException as e:
+        print(
+            f"[NOT FOUND] Rule {rule_id} or Link {link_id} not found for edit form, user {user_id}: {e.detail}"
+        )
+        return templates.TemplateResponse(
+            "partials/modal_error.html",
+            {
+                "request": request,
+                "error_title": "Błąd Ładowania Formularza",
+                "error_message": e.detail,
+            },
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    except Exception as e:
+        print(f"Error fetching rule for edit form partial (rule {rule_id}): {e}")
+        return templates.TemplateResponse(
+            "partials/modal_error.html",
+            {
+                "request": request,
+                "error_title": "Błąd Serwera",
+                "error_message": "Nie udało się załadować formularza edycji.",
+            },
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+# --- Endpoint zwracający fragment HTML dla listy reguł ---
+@router.get(
+    "/list-partial",
+    summary="Get Rules List HTML Partial",
+    description="Returns an HTML fragment containing table rows for the rules of a specific link.",
+    tags=["Rules UI Partials"],
+    include_in_schema=False,
+)
+async def get_rules_list_partial(
+    request: Request,
+    link_id: UUID,  # <<< Usunięto Path(...)
+    user_id: UUID = Depends(get_current_user_id),
+    rule_service: RuleService = Depends(get_rule_service),
+    templates: Jinja2Templates = Depends(get_templates),
+):
+    """Fetches rules for a link and renders them as HTML table rows."""
+    print(f"Fetching rules list partial for link {link_id} by user {user_id}")
+    try:
+        rules = await rule_service.get_rules_for_link(link_id=link_id, user_id=user_id)
+        return templates.TemplateResponse(
+            "partials/rule_rows.html",
+            {"request": request, "rules": rules, "link_id": link_id},
+        )
+    except NotFoundException as e:
+        print(
+            f"[NOT FOUND] Link {link_id} not found for rules partial, user {user_id}: {e.detail}"
+        )
+        return templates.TemplateResponse(
+            "partials/rule_row_error.html",
+            {
+                "request": request,
+                "error_message": "Link nie został znaleziony lub nie masz uprawnień.",
+            },
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    except Exception as e:
+        print(f"Error fetching rules for partial rendering (link {link_id}): {e}")
+        return templates.TemplateResponse(
+            "partials/rule_row_error.html",
+            {"request": request, "error_message": "Nie udało się załadować reguł."},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+# --- Endpoint POST / (tworzenie reguły) ---
 @router.post(
-    "",
+    "/",
     response_model=RuleResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create Rule",
@@ -45,45 +156,43 @@ router = APIRouter()
     tags=["Rules"],
 )
 async def create_rule_endpoint(
-    # Reordered: Body parameter first
     rule_data: RuleCreate,
-    # Path parameter next
-    link_id: UUID = Path(..., description="The ID of the link to add the rule to"),
-    # Dependencies last
+    link_id: UUID,  # <<< Usunięto Path(...)
     current_user_id: UUID = Depends(get_current_user_id),
     rule_service: RuleService = Depends(get_rule_service),
 ):
     """Creates a new routing rule for the specified link."""
     print(
-        f"Received request to create rule for link {link_id} by user {current_user_id}"
+        f"Received request to create rule for link {link_id} by user {current_user_id} with data: {rule_data.model_dump()}"
     )
     try:
-        # ... (rest of the function remains the same)
         created_rule = await rule_service.add_rule_to_link(
             link_id=link_id, rule_data=rule_data, user_id=current_user_id
         )
         return created_rule
-    except ParentLinkNotFoundException as e:
+    except NotFoundException as e:
         print(
-            f"[NOT FOUND] Parent link {link_id} not found or access denied for user {current_user_id}: {e.detail}"
+            f"[NOT FOUND] Parent link {link_id} not found or access denied: {e.detail}"
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Parent link not found or access denied.",
         )
-    except PriorityConflictException as e:
-        print(f"[CONFLICT] Priority conflict for link {link_id}: {e.detail}")
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.detail)
-    except DatabaseException as e:
-        print(f"[ERROR] Database error creating rule for link {link_id}: {e.detail}")
+    except (PriorityConflictException, ValidationException) as e:
+        print(
+            f"[CONFLICT/VALIDATION] Error creating rule for link {link_id}: {e.detail}"
+        )
+        status_code = (
+            status.HTTP_409_CONFLICT
+            if isinstance(e, PriorityConflictException)
+            else status.HTTP_422_UNPROCESSABLE_ENTITY
+        )
+        raise HTTPException(status_code=status_code, detail=e.detail)
+    except (DatabaseException, ServiceException) as e:
+        print(f"[ERROR] DB/Service error creating rule for link {link_id}: {e.detail}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {e.detail}",
-        )
-    except ServiceException as e:
-        print(f"[ERROR] Service error creating rule for link {link_id}: {e.detail}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.detail
+            detail=f"Server error: {e.detail}",
         )
     except Exception as e:
         print(
@@ -96,52 +205,32 @@ async def create_rule_endpoint(
         )
 
 
-# --- Endpoint GET /links/{link_id}/rules ---
+# --- Endpoint GET / (pobieranie listy reguł JSON) ---
 @router.get(
-    "",
+    "/",
     response_model=List[RuleResponse],
     summary="List Rules for Link",
-    description="Retrieves a list of all routing rules for a specific link owned by the authenticated user, ordered by priority.",
+    description="Retrieves a list of all routing rules...",
     tags=["Rules"],
 )
 async def list_rules_endpoint(
-    request: Request,
-    link_id: UUID = Path(..., description="The ID of the link whose rules to retrieve"),
+    link_id: UUID,  # <<< Usunięto Path(...)
     current_user_id: UUID = Depends(get_current_user_id),
     rule_service: RuleService = Depends(get_rule_service),
 ):
-    """Retrieves all rules for a specific link, sorted by priority. Can return HTML fragment for HTMX."""
-    is_htmx_request = request.headers.get("hx-request") == "true"
+    """Retrieves all rules for a specific link (JSON response)..."""
     print(
-        f"Received request to list rules for link {link_id} by user {current_user_id}. HTMX={is_htmx_request}"
+        f"Received request to list rules (JSON) for link {link_id} by user {current_user_id}"
     )
     try:
         rules = await rule_service.get_rules_for_link(
             link_id=link_id, user_id=current_user_id
         )
-
-        if is_htmx_request:
-            if templates:
-                print(f"Rendering HTMX partial for {len(rules)} rules.")
-                return templates.TemplateResponse(
-                    "dashboard/rules_list_partial.html",  # Przykładowa nazwa szablonu
-                    {"request": request, "rules": rules, "link_id": link_id},
-                )
-            else:
-                print(
-                    "[ERROR] HTMX request received but templates are not configured or imported."
-                )
-                raise HTTPException(
-                    status_code=501,
-                    detail="HTML templating for HTMX is not configured.",
-                )
-        else:
-            print(f"Returning JSON response for {len(rules)} rules.")
-            return rules
-
-    except ParentLinkNotFoundException as e:
+        print(f"Returning JSON response for {len(rules)} rules.")
+        return rules
+    except NotFoundException as e:
         print(
-            f"[NOT FOUND] Parent link {link_id} not found or access denied for user {current_user_id}: {e.detail}"
+            f"[NOT FOUND] Parent link {link_id} not found or access denied: {e.detail}"
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -164,32 +253,32 @@ async def list_rules_endpoint(
         )
 
 
-# --- Endpoint GET /links/{link_id}/rules/{rule_id} ---
+# --- Endpoint GET /{rule_id} (pobieranie pojedynczej reguły) ---
 @router.get(
     "/{rule_id}",
     response_model=RuleResponse,
     summary="Get Rule Details",
-    description="Retrieves details of a specific routing rule within a link owned by the authenticated user.",
+    description="Retrieves details of a specific routing rule...",
     tags=["Rules"],
 )
 async def get_rule_endpoint(
-    link_id: UUID = Path(..., description="The ID of the parent link"),
-    rule_id: UUID = Path(..., description="The ID of the rule to retrieve"),
+    link_id: UUID,  # <<< Usunięto Path(...)
+    rule_id: UUID = Path(
+        ..., description="The ID of the rule to retrieve"
+    ),  # rule_id jest OK jako Path
     current_user_id: UUID = Depends(get_current_user_id),
     rule_service: RuleService = Depends(get_rule_service),
 ):
-    """Retrieves details for a single rule, ensuring it belongs to the specified link and user."""
+    """Retrieves details for a single rule (JSON response)."""
     print(
-        f"Received request to get rule {rule_id} for link {link_id} by user {current_user_id}"
+        f"Received request to get rule {rule_id} for link {link_id} by user {current_user_id} (JSON)"
     )
     try:
         rule = await rule_service.get_rule_details(
             link_id=link_id, rule_id=rule_id, user_id=current_user_id
         )
         return rule
-    except (
-        NotFoundException
-    ) as e:  # Obejmuje nieznalezienie reguły lub linku nadrzędnego (jeśli serwis tak zgłasza)
+    except NotFoundException as e:
         print(
             f"[NOT FOUND] {e.detail} for rule {rule_id} on link {link_id}, user {current_user_id}"
         )
@@ -213,34 +302,29 @@ async def get_rule_endpoint(
         )
 
 
-# --- Endpoint PATCH /links/{link_id}/rules/{rule_id} ---
+# --- Endpoint PATCH /{rule_id} (aktualizacja reguły) ---
 @router.patch(
     "/{rule_id}",
     response_model=RuleResponse,
     summary="Update Rule",
-    description="Updates details of a specific routing rule within a link owned by the authenticated user.",
+    description="Updates details of a specific routing rule...",
     tags=["Rules"],
 )
 async def update_rule_endpoint(
-    # Reordered: Body parameter first
     update_data: RuleUpdate,
-    # Path parameters next
-    link_id: UUID = Path(..., description="The ID of the parent link"),
-    rule_id: UUID = Path(..., description="The ID of the rule to update"),
-    # Dependencies last
+    link_id: UUID,  # <<< Usunięto Path(...)
+    rule_id: UUID = Path(
+        ..., description="The ID of the rule to update"
+    ),  # rule_id jest OK jako Path
     current_user_id: UUID = Depends(get_current_user_id),
     rule_service: RuleService = Depends(get_rule_service),
 ):
-    """
-    Updates specific fields of a routing rule.
-    Requires ownership of the parent link. Validates data consistency upon update.
-    """
+    """Updates specific fields of a routing rule."""
     update_payload_info = update_data.model_dump(exclude_unset=True)
     print(
         f"Received request to update rule {rule_id} for link {link_id} by user {current_user_id} with data: {update_payload_info}"
     )
     try:
-        # ... (reszta funkcji bez zmian)
         updated_rule = await rule_service.update_rule(
             link_id=link_id,
             rule_id=rule_id,
@@ -248,37 +332,28 @@ async def update_rule_endpoint(
             user_id=current_user_id,
         )
         return updated_rule
-    except (
-        NotFoundException
-    ) as e:  # Może być rzucony przez weryfikację własności lub nieznalezienie reguły
+    except NotFoundException as e:
         print(
-            f"[NOT FOUND] {e.detail} during update for rule {rule_id} on link {link_id}, user {current_user_id}"
+            f"[NOT FOUND] {e.detail} during update for rule {rule_id} on link {link_id}"
         )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.detail)
-    except ValidationException as e:  # Błąd walidacji spójności z serwisu
+    except (ValidationException, PriorityConflictException) as e:
         print(
-            f"[BAD REQUEST] Validation error during update for rule {rule_id}: {e.detail}"
+            f"[BAD REQUEST/CONFLICT] Validation/Logic error during update for rule {rule_id}: {e.detail}"
         )
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.detail)
-    except PriorityConflictException as e:
-        print(
-            f"[CONFLICT] Priority conflict during update for rule {rule_id} on link {link_id}: {e.detail}"
+        status_code = (
+            status.HTTP_409_CONFLICT
+            if isinstance(e, PriorityConflictException)
+            else status.HTTP_422_UNPROCESSABLE_ENTITY
         )
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=e.detail)
-    except DatabaseException as e:
+        raise HTTPException(status_code=status_code, detail=e.detail)
+    except (DatabaseException, ServiceException) as e:
         print(
-            f"[ERROR] Database error updating rule {rule_id} for link {link_id}: {e.detail}"
+            f"[ERROR] DB/Service error updating rule {rule_id} for link {link_id}: {e.detail}"
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Database error: {e.detail}",
-        )
-    except ServiceException as e:
-        print(
-            f"[ERROR] Service error updating rule {rule_id} for link {link_id}: {e.detail}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=e.detail
         )
     except Exception as e:
         print(
@@ -291,24 +366,23 @@ async def update_rule_endpoint(
         )
 
 
-# --- Endpoint DELETE /links/{link_id}/rules/{rule_id} ---
+# --- Endpoint DELETE /{rule_id} (usuwanie reguły) ---
 @router.delete(
     "/{rule_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete Rule",
-    description="Deletes a specific routing rule within a link owned by the authenticated user.",
+    description="Deletes a specific routing rule...",
     tags=["Rules"],
 )
 async def delete_rule_endpoint(
-    link_id: UUID = Path(..., description="The ID of the parent link"),
-    rule_id: UUID = Path(..., description="The ID of the rule to delete"),
+    link_id: UUID,  # <<< Usunięto Path(...)
+    rule_id: UUID = Path(
+        ..., description="The ID of the rule to delete"
+    ),  # rule_id jest OK jako Path
     current_user_id: UUID = Depends(get_current_user_id),
     rule_service: RuleService = Depends(get_rule_service),
 ):
-    """
-    Deletes a specific rule identified by its ID and parent link ID.
-    Returns No Content on success.
-    """
+    """Deletes a specific rule identified by its ID and parent link ID."""
     print(
         f"Received request to delete rule {rule_id} for link {link_id} by user {current_user_id}"
     )
@@ -316,12 +390,10 @@ async def delete_rule_endpoint(
         await rule_service.delete_rule(
             link_id=link_id, rule_id=rule_id, user_id=current_user_id
         )
-        # Zwróć pustą odpowiedź z kodem 204
         return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    except NotFoundException as e:  # Obejmuje nieznalezienie reguły lub linku
+    except NotFoundException as e:
         print(
-            f"[NOT FOUND] {e.detail} during delete for rule {rule_id} on link {link_id}, user {current_user_id}"
+            f"[NOT FOUND] {e.detail} during delete for rule {rule_id} on link {link_id}"
         )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.detail)
     except DatabaseException as e:
@@ -341,3 +413,6 @@ async def delete_rule_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal server error occurred.",
         )
+
+
+# --- Koniec pliku ---

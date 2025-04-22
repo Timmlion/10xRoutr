@@ -1,0 +1,138 @@
+{% extends "base.html" %} {% block title %}Utwórz Nowy Link - routr{% endblock
+%} {% block navbar %} {% include "partials/navbar.html" %} {% endblock %} {%
+block content %}
+<div class="container mt-4">
+  <h1 class="mb-4">Utwórz Nowy Link routr</h1>
+
+  <div class="row">
+    <div class="col-md-8 col-lg-6">
+      {# Miejsce na komunikaty o błędach Z TEGO formularza #}
+      <div id="create-link-message-area" class="mb-3"></div>
+
+      <form
+        id="create-link-form"
+        hx-post="/api/v1/links"
+        hx-target="#create-link-message-area"
+        hx-swap="innerHTML"
+        {#
+        hx-encoding
+        i
+        hx-ext
+        USUNIĘTE
+        #}
+      >
+        <div class="mb-3">
+          <label for="alias" class="form-label"
+            >Alias <span class="text-danger">*</span></label
+          >
+          <div class="input-group">
+            <span class="input-group-text" id="alias-prefix"
+              >http://localhost:8000/</span
+            >
+            <input
+              type="text"
+              class="form-control"
+              id="alias"
+              name="alias"
+              required
+              pattern="^[a-z0-9-]+$"
+              minlength="3"
+              maxlength="64"
+              aria-describedby="aliasHelp alias-prefix"
+            />
+          </div>
+          <div id="aliasHelp" class="form-text">
+            Unikalna nazwa Twojego linku. Tylko małe litery, cyfry i myślniki.
+            Długość 3-64 znaki.
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label for="default_url" class="form-label"
+            >Domyślny URL Przekierowania (Opcjonalnie)</label
+          >
+          <input
+            type="url"
+            class="form-control"
+            id="default_url"
+            name="default_url"
+            placeholder="https://twoja-strona.com/fallback"
+          />
+          <div id="defaultUrlHelp" class="form-text">
+            URL, na który użytkownik zostanie przekierowany, jeśli żadna reguła
+            nie zostanie dopasowana. Puste pole oznacza brak domyślnego
+            przekierowania.
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Utwórz Link</button>
+        <a
+          href="{{ url_for('render_dashboard') }}"
+          class="btn btn-secondary ms-2"
+          >Anuluj</a
+        >
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block scripts %} {# Pozostaje tylko skrypt do obsługi
+odpowiedzi (błędów lub sukcesu bez przekierowania) #}
+<script>
+  document.body.addEventListener("htmx:beforeSwap", function (evt) {
+    if (
+      evt.detail.target.id === "create-link-message-area" &&
+      !evt.detail.isSuccess
+    ) {
+      evt.preventDefault();
+      const messageArea = document.getElementById("create-link-message-area");
+      let userFriendlyMessage =
+        "Wystąpił nieznany błąd podczas tworzenia linku.";
+      try {
+        const errorResponse = JSON.parse(evt.detail.xhr.responseText);
+        if (
+          evt.detail.xhr.status === 422 &&
+          errorResponse.detail &&
+          Array.isArray(errorResponse.detail)
+        ) {
+          userFriendlyMessage = "Błąd walidacji danych:<ul>";
+          errorResponse.detail.forEach((err) => {
+            // Prawdopodobnie lokalizacja będzie teraz ['body', 'alias'] lub ['body', 'default_url']
+            const fieldName =
+              err.loc && err.loc.length > 1 ? err.loc[1] : "nieznane pole";
+            const fieldLabel =
+              fieldName === "alias"
+                ? "Alias"
+                : fieldName === "default_url"
+                ? "Domyślny URL"
+                : fieldName;
+            const msg = err.msg || "Nieprawidłowa wartość.";
+            userFriendlyMessage += `<li>Pole '${fieldLabel}': ${msg}</li>`;
+          });
+          userFriendlyMessage += "</ul>";
+        } else if (
+          errorResponse.detail &&
+          typeof errorResponse.detail === "string"
+        ) {
+          userFriendlyMessage = errorResponse.detail; // Np. błąd 409 Conflict
+        } else {
+          userFriendlyMessage = `Błąd serwera (status: ${evt.detail.xhr.status}). Spróbuj ponownie.`;
+        }
+      } catch (e) {
+        userFriendlyMessage = `Błąd serwera (status: ${evt.detail.xhr.status}). Brak szczegółów.`;
+      }
+      messageArea.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                    ${userFriendlyMessage}
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                  </div>`;
+    } else if (
+      evt.detail.target.id === "create-link-message-area" &&
+      evt.detail.isSuccess
+    ) {
+      evt.detail.target.innerHTML = "";
+      console.log(
+        "Create link request successful (201), waiting for HX-Redirect header..."
+      );
+    }
+  });
+</script>
+{% endblock %}

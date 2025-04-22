@@ -46,12 +46,23 @@ class LinkService:
         Handles potential database errors, raising specific custom exceptions.
         It re-raises known business exceptions and wraps others.
         """
-        # ... (sprawdzanie wyjątków biznesowych bez zmian) ...
+        # Sprawdzanie wyjątków biznesowych (jeśli jakieś by tu były łapane)
+        if isinstance(
+            error, (AliasConflictException, NotFoundException, ValidationException)
+        ):
+            print(
+                f"Re-raising known business exception from {context}: {type(error).__name__}"
+            )
+            raise error  # Po prostu rzuć dalej znane wyjątki biznesowe
 
+        # Obsługa błędów Postgrest
         if isinstance(error, PostgrestAPIError):
             error_code = getattr(error, "code", None)
-            error_message = getattr(error, "message", "")
-            error_details = getattr(error, "details", "")
+            # Domyślnie ustawiamy na pusty string, jeśli None, dla bezpiecznego sprawdzania 'in'
+            error_message = getattr(error, "message", "") or ""
+            error_details = (
+                getattr(error, "details", "") or ""
+            )  # Ustaw na pusty string, jeśli None
             error_status = getattr(error, "status", "N/A")
 
             print(
@@ -59,34 +70,38 @@ class LinkService:
             )
 
             if error_code == POSTGRES_UNIQUE_VIOLATION_CODE:
-                # <<< POPRAWKA: Uproszczone wykrywanie konfliktu aliasu >>>
-                # Jeśli kod to 23505 i komunikat/szczegóły zawierają 'alias',
-                # zakładamy, że to konflikt aliasu w tym serwisie.
-                mentions_alias = "alias" in error_details or "alias" in error_message
-                if mentions_alias:
-                    print(
-                        f"[CONFLICT] Alias conflict likely detected during {context}."
-                    )
+                # Bezpieczne sprawdzanie obecności "alias" w komunikatach
+                # Sprawdzamy też constraint name "routr_links_alias_key" dla pewności
+                is_alias_conflict = (
+                    "routr_links_alias_key" in error_message
+                    or "routr_links_alias_key" in error_details
+                    or ("alias" in error_details)
+                    or ("alias" in error_message)
+                )
+
+                if is_alias_conflict:
+                    print(f"[CONFLICT] Alias conflict detected during {context}.")
+                    # Rzuć konkretny wyjątek biznesowy
                     raise AliasConflictException() from error
                 else:
-                    # Inne naruszenie unikalności
+                    # Inne naruszenie unikalności (np. priorytet w RuleService)
                     print(
                         f"[ERROR] Unique constraint violation (other) during {context}: {error_details or error_message}"
                     )
+                    # Rzuć bardziej ogólny wyjątek bazy danych
                     raise DatabaseException(
                         detail=f"Unique constraint violation during {context}: {error_details or error_message}"
                     ) from error
-            # Inne błędy Postgrest
+
+            # Inne błędy Postgrest - traktujemy jako błędy bazy danych
             raise DatabaseException(
-                detail=f"Database API error during {context}: {error_message}"
+                detail=f"Database API error during {context}: {error_message or 'Unknown PostgREST error'}"
             ) from error
         else:
-            # Inne, nieoczekiwane błędy (niebędące wyjątkami biznesowymi ani PostgrestAPIError)
-            # np. błędy sieciowe na niższym poziomie, błędy w logice Python itp.
+            # Inne, nieoczekiwane błędy
             print(f"[ERROR] Unexpected error during {context}:")
-            traceback.print_exc()  # Drukuj pełny traceback dla tych błędów
-            # Rzuć ogólny DatabaseException lub ServiceException
-            raise DatabaseException(
+            traceback.print_exc()
+            raise DatabaseException(  # Można też rzucić ServiceException
                 detail=f"An unexpected error occurred during {context}."
             ) from error
 

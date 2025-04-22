@@ -1,0 +1,67 @@
+{# Oczekuje zmiennej 'stats' (obiekt LinkStatsResponse) w kontekście #} {% if
+stats %} {# Możemy powtórzyć całkowitą liczbę kliknięć dla kontekstu #}
+<p class="lead">
+  Całkowita liczba kliknięć w link ({{ stats.alias }}):
+  <span class="fw-bold">{{ stats.total_clicks }}</span>
+</p>
+<hr />
+
+<h4 class="mb-3">Kliknięcia w poszczególne cele:</h4>
+
+{% if stats.target_clicks %}
+<div class="table-responsive">
+  <table class="table table-sm table-striped">
+    <thead>
+      <tr>
+        <th scope="col">Typ Celu</th>
+        <th scope="col">Cel (Podgląd)</th>
+        <th scope="col" class="text-center">Liczba Kliknięć</th>
+        {# Można dodać ID reguły, jeśli potrzebne do debugowania #} {#
+        <th scope="col">Rule ID</th>
+        #}
+      </tr>
+    </thead>
+    <tbody>
+      {% for target_stat in stats.target_clicks %}
+      <tr>
+        <td>
+          {% if target_stat.target_type == 'url' %}
+          <i class="bi bi-link-45deg me-1" title="URL"></i> URL {% elif
+          target_stat.target_type == 'html' %}
+          <i class="bi bi-filetype-html me-1" title="HTML"></i> HTML {% else %}
+          {{ target_stat.target_type }} {% endif %}
+        </td>
+        <td>
+          {# Dla URL pokazujemy linkowalny URL, dla HTML tylko placeholder #} {%
+          if target_stat.target_type == 'url' %}
+          <a
+            href="{{ target_stat.target_value_preview }}"
+            target="_blank"
+            title="{{ target_stat.target_value_preview }}"
+          >
+            {{ target_stat.target_value_preview | truncate(80, True) }} {#
+            Dłuższy podgląd URL #}
+          </a>
+          {% else %}
+          <span class="text-muted">{{ target_stat.target_value_preview }}</span>
+          {% endif %}
+        </td>
+        <td class="text-center fw-bold">{{ target_stat.current_clicks }}</td>
+        {#
+        <td><small class="text-muted">{{ target_stat.rule_id }}</small></td>
+        #}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-info" role="alert">
+  Brak zarejestrowanych kliknięć w poszczególne cele.
+</div>
+{% endif %} {% else %} {# Komunikat, jeśli dane statystyk nie zostały załadowane
+#}
+<div class="alert alert-warning" role="alert">
+  Nie udało się załadować danych statystycznych.
+</div>
+{% endif %}
