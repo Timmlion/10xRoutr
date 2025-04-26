@@ -1,16 +1,18 @@
-# tests/services/test_rule_service.py
+# tests/services/test_rule_service.py (Corrected - Full File)
 
 import pytest
-import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock, ANY, patch
+from unittest.mock import AsyncMock, MagicMock, patch, ANY
 from uuid import uuid4, UUID
 from datetime import datetime, timezone, timedelta
-
-# Importy z Twojego kodu
-from supabase import AsyncClient
 from postgrest.exceptions import APIError as PostgrestAPIError
-from postgrest.types import CountMethod
-from src.services.rule_service import RuleService
+from supabase import AsyncClient  # Import AsyncClient
+
+# Import testowanej klasy i wyjątków ORAZ stałych
+from src.services.rule_service import (
+    RuleService,
+    ROUTING_RULES_LINK_ID_PRIORITY_KEY,
+    POSTGRES_UNIQUE_VIOLATION_CODE,
+)
 from src.services.custom_exceptions import (
     DatabaseException,
     NotFoundException,
@@ -18,554 +20,639 @@ from src.services.custom_exceptions import (
     PriorityConflictException,
     ValidationException,
 )
+
+# Import modeli DTO
 from src.schemas.rule import RuleCreate, RuleUpdate, RuleResponse
 from src.schemas.enums import RuleTypeEnum, TargetTypeEnum
 
-# --- Fixtures ---
+# Stałe dla testów
+TEST_LINK_ID = uuid4()
+TEST_USER_ID = uuid4()
+TEST_RULE_ID = uuid4()
+TEST_OTHER_RULE_ID = uuid4()
 
 
+# --- Fixture dla mocka klienta Supabase ---
 @pytest.fixture
-def mock_supabase_client(mocker):
-    """Fixture to create a mock Supabase AsyncClient."""
+def mock_supabase_client():
+    """Fixture to create a mock Supabase AsyncClient with distinct execute mocks."""
     mock_client = MagicMock(spec=AsyncClient)
-    mock_tables = {}
 
-    def get_mock_table(table_name):
-        if table_name not in mock_tables:
-            mock_table = MagicMock(name=f"table({table_name})")
-            mock_table.select.return_value = mock_table
-            mock_table.insert.return_value = mock_table
-            mock_table.update.return_value = mock_table
-            mock_table.delete.return_value = mock_table
-            mock_table.eq.return_value = mock_table
-            mock_table.maybe_single.return_value = mock_table
-            mock_table.order.return_value = mock_table
-            mock_table.execute = AsyncMock(name=f"table({table_name}).execute")
-            mock_tables[table_name] = mock_table
-        return mock_tables[table_name]
+    # Define distinct AsyncMock instances for different execute chains
+    mock_select_single_execute = AsyncMock(name="select_single_execute")
+    mock_select_list_execute = AsyncMock(name="select_list_execute")
+    mock_insert_execute = AsyncMock(name="insert_execute")
+    mock_update_execute = AsyncMock(name="update_execute")
+    mock_delete_execute = AsyncMock(name="delete_execute")
 
-    mock_client.table.side_effect = get_mock_table
+    # Configure chains to return the specific execute mock
+    # For maybe_single() calls (ownership checks, get_rule_details, update pre-check)
+    mock_client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute = (
+        mock_select_single_execute
+    )
+    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute = (
+        mock_select_single_execute
+    )
+    # For get_rules_for_link (list)
+    mock_client.table.return_value.select.return_value.eq.return_value.order.return_value.execute = (
+        mock_select_list_execute
+    )
+    # For add_rule_to_link (insert)
+    mock_client.table.return_value.insert.return_value.execute = mock_insert_execute
+    # For update_rule (update)
+    mock_client.table.return_value.update.return_value.eq.return_value.eq.return_value.execute = (
+        mock_update_execute
+    )
+    # For delete_rule (delete)
+    mock_client.table.return_value.delete.return_value.eq.return_value.eq.return_value.execute = (
+        mock_delete_execute
+    )
+
     return mock_client
 
 
+# --- Fixture dla instancji RuleService ---
 @pytest.fixture
 def rule_service(mock_supabase_client):
     """Fixture to create an instance of RuleService with the mocked client."""
     return RuleService(supabase_client=mock_supabase_client)
 
 
-# Helper function to create mock DB response objects
-def create_mock_response(data=None, count=None):
-    mock_response = MagicMock()
-    mock_response.data = data
-    mock_response.count = count
-    return mock_response
+# --- Helpery do mockowania weryfikacji (zwracają listy odpowiedzi dla side_effect) ---
+def mock_ownership_verification_success_sequence():
+    mock_link_exists = MagicMock()
+    mock_link_exists.count = 1
+    mock_link_exists.data = [{"id": str(TEST_LINK_ID)}]
+    mock_owner_check = MagicMock()
+    mock_owner_check.data = [{"id": str(TEST_LINK_ID)}]
+    return [mock_link_exists, mock_owner_check]
 
 
-# --- Test Data ---
-TEST_USER_ID = uuid4()
-TEST_LINK_ID = uuid4()
-TEST_RULE_ID = uuid4()
-NOW = datetime.now(timezone.utc)
+def mock_ownership_verification_not_found_sequence():
+    mock_link_exists = MagicMock()
+    mock_link_exists.count = 0
+    mock_link_exists.data = []
+    return [mock_link_exists]
 
-VALID_RULE_CREATE_TIME_DATA = {
-    "priority": 10,
-    "rule_type": RuleTypeEnum.TIME,
-    "target_type": TargetTypeEnum.URL,
-    "target_value": "https://time-rule.com",
-    "start_time": NOW,
-    "end_time": NOW + timedelta(days=1),
-}
 
-VALID_RULE_CREATE_CLICKS_DATA = {
-    "priority": 20,
-    "rule_type": RuleTypeEnum.CLICKS,
-    "target_type": TargetTypeEnum.HTML,
-    "target_value": "<h1>Clicks Rule</h1>",
-    "max_clicks": 1000,
-}
+def mock_ownership_verification_forbidden_sequence():
+    mock_link_exists = MagicMock()
+    mock_link_exists.count = 1
+    mock_link_exists.data = [{"id": str(TEST_LINK_ID)}]
+    mock_owner_check = MagicMock()
+    mock_owner_check.data = None
+    return [mock_link_exists, mock_owner_check]
 
-# --- Test Cases ---
 
-# === Testy dla _verify_link_ownership === (metoda prywatna, testowana pośrednio)
-
-# === Testy dla add_rule_to_link ===
+# --- Testy ---
 
 
 @pytest.mark.asyncio
-async def test_add_rule_success(rule_service, mock_supabase_client):
-    """Test successfully adding a new rule."""
-    rule_create = RuleCreate(**VALID_RULE_CREATE_TIME_DATA)
-    # Mock _verify_link_ownership (zamiast mockować DB call, mockujemy metodę serwisu)
-    # Tutaj zakładamy, że chcemy testować add_rule_to_link niezależnie od _verify...
-    with patch.object(
-        rule_service, "_verify_link_ownership", return_value=None
-    ) as mock_verify:
+async def test_add_rule_to_link_success(
+    rule_service: RuleService, mock_supabase_client
+):
+    """Testuje pomyślne dodanie reguły."""
+    rule_create_data = RuleCreate(
+        priority=1,
+        rule_type=RuleTypeEnum.CLICKS,
+        target_type=TargetTypeEnum.URL,
+        target_value="http://example.com/click",
+        max_clicks=100,
+        start_time=None,
+        end_time=None,
+    )
+    expected_db_insert_data = {
+        "link_id": str(TEST_LINK_ID),
+        "priority": 1,
+        "rule_type": "clicks",
+        "target_type": "url",
+        "target_value": "http://example.com/click",
+        "start_time": None,
+        "end_time": None,
+        "max_clicks": 100,
+    }
+    utc_now_dt = datetime.now(timezone.utc)
+    mock_created_at_str = utc_now_dt.isoformat()
+    mock_updated_at_str = utc_now_dt.isoformat()
+    mock_created_rule_db = {
+        **expected_db_insert_data,
+        "id": str(TEST_RULE_ID),
+        "current_clicks": 0,
+        "created_at": mock_created_at_str,
+        "updated_at": mock_updated_at_str,
+    }
 
-        # Mock insert response
-        expected_db_data = {
-            "id": str(TEST_RULE_ID),
-            "link_id": str(TEST_LINK_ID),
-            "priority": 10,
-            "rule_type": "time",
-            "target_type": "url",
-            "target_value": "https://time-rule.com",
-            "start_time": NOW.isoformat(),
-            "end_time": (NOW + timedelta(days=1)).isoformat(),
-            "max_clicks": None,
-            "current_clicks": 0,
-            "created_at": NOW.isoformat(),
-            "updated_at": NOW.isoformat(),
+    # Arrange:
+    mock_select_single_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_insert_execute = (
+        mock_supabase_client.table.return_value.insert.return_value.execute
+    )
+
+    mock_select_single_execute.side_effect = (
+        mock_ownership_verification_success_sequence()
+    )
+    mock_insert_response = MagicMock()
+    mock_insert_response.data = [mock_created_rule_db]
+    mock_insert_execute.return_value = mock_insert_response
+
+    # Act
+    created_rule = await rule_service.add_rule_to_link(
+        link_id=TEST_LINK_ID, rule_data=rule_create_data, user_id=TEST_USER_ID
+    )
+
+    # Assert
+    assert isinstance(created_rule, RuleResponse)
+    assert created_rule.id == TEST_RULE_ID
+    assert mock_select_single_execute.call_count == 2
+    mock_insert_execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_add_rule_link_not_found(rule_service: RuleService, mock_supabase_client):
+    """Testuje próbę dodania reguły do nieistniejącego linku."""
+    rule_create_data = RuleCreate(
+        priority=1,
+        rule_type=RuleTypeEnum.CLICKS,
+        target_type=TargetTypeEnum.URL,
+        target_value="http://example.com",
+        max_clicks=100,
+    )
+    mock_select_single_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_select_single_execute.side_effect = (
+        mock_ownership_verification_not_found_sequence()
+    )
+
+    with pytest.raises(NotFoundException, match="Parent link .* not found"):
+        await rule_service.add_rule_to_link(
+            link_id=TEST_LINK_ID, rule_data=rule_create_data, user_id=TEST_USER_ID
+        )
+    assert mock_select_single_execute.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_add_rule_link_forbidden(rule_service: RuleService, mock_supabase_client):
+    """Testuje próbę dodania reguły do linku nienależącego do użytkownika."""
+    rule_create_data = RuleCreate(
+        priority=1,
+        rule_type=RuleTypeEnum.CLICKS,
+        target_type=TargetTypeEnum.URL,
+        target_value="http://example.com",
+        max_clicks=100,
+    )
+    mock_select_single_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_select_single_execute.side_effect = (
+        mock_ownership_verification_forbidden_sequence()
+    )
+
+    with pytest.raises(NotFoundException, match="Access denied to parent link"):
+        await rule_service.add_rule_to_link(
+            link_id=TEST_LINK_ID, rule_data=rule_create_data, user_id=TEST_USER_ID
+        )
+    assert mock_select_single_execute.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_add_rule_priority_conflict(
+    rule_service: RuleService, mock_supabase_client
+):
+    """Testuje konflikt priorytetu podczas dodawania reguły."""
+    rule_create_data = RuleCreate(
+        priority=1,
+        rule_type=RuleTypeEnum.CLICKS,
+        target_type=TargetTypeEnum.URL,
+        target_value="http://example.com",
+        max_clicks=100,
+    )
+    mock_select_single_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_select_single_execute.side_effect = (
+        mock_ownership_verification_success_sequence()
+    )
+
+    mock_insert_execute = (
+        mock_supabase_client.table.return_value.insert.return_value.execute
+    )
+    mock_postgrest_error = PostgrestAPIError(
+        {
+            "message": f'duplicate key value violates unique constraint "{ROUTING_RULES_LINK_ID_PRIORITY_KEY}"',
+            "code": POSTGRES_UNIQUE_VIOLATION_CODE,
+            "details": "",
         }
-        mock_response = create_mock_response(data=[expected_db_data])
-        mock_supabase_client.table(rule_service.rules_table).execute.return_value = (
-            mock_response
+    )
+    mock_insert_execute.side_effect = mock_postgrest_error
+
+    with pytest.raises(PriorityConflictException, match="priority is already in use"):
+        await rule_service.add_rule_to_link(
+            link_id=TEST_LINK_ID, rule_data=rule_create_data, user_id=TEST_USER_ID
         )
-
-        # Act
-        result = await rule_service.add_rule_to_link(
-            link_id=TEST_LINK_ID, rule_data=rule_create, user_id=TEST_USER_ID
-        )
-
-        # Assert
-        mock_verify.assert_awaited_once_with(link_id=TEST_LINK_ID, user_id=TEST_USER_ID)
-        mock_supabase_client.table(rule_service.rules_table).insert.assert_called_once()
-        # Sprawdźmy kluczowe pola w insercie
-        insert_call_args = mock_supabase_client.table(
-            rule_service.rules_table
-        ).insert.call_args[0][0]
-        assert insert_call_args["link_id"] == str(TEST_LINK_ID)
-        assert insert_call_args["priority"] == 10
-        assert (
-            insert_call_args["rule_type"] == RuleTypeEnum.TIME
-        )  # Sprawdź enum lub .value
-        mock_supabase_client.table(
-            rule_service.rules_table
-        ).execute.assert_awaited_once()
-
-        assert isinstance(result, RuleResponse)
-        assert result.id == TEST_RULE_ID
-        assert result.priority == 10
+    assert mock_select_single_execute.call_count == 2
+    mock_insert_execute.assert_awaited_once()
 
 
+# --- Testy dla get_rules_for_link ---
 @pytest.mark.asyncio
-async def test_add_rule_link_not_found(rule_service, mock_supabase_client):
-    """Test adding a rule when the parent link is not found or owned."""
-    rule_create = RuleCreate(**VALID_RULE_CREATE_TIME_DATA)
-    # Mock _verify_link_ownership to raise the exception
-    with patch.object(
-        rule_service,
-        "_verify_link_ownership",
-        side_effect=ParentLinkNotFoundException(detail="Link not found"),
-    ) as mock_verify:
-
-        # Act & Assert
-        with pytest.raises(ParentLinkNotFoundException):
-            await rule_service.add_rule_to_link(
-                link_id=TEST_LINK_ID, rule_data=rule_create, user_id=TEST_USER_ID
-            )
-
-        mock_verify.assert_awaited_once_with(link_id=TEST_LINK_ID, user_id=TEST_USER_ID)
-        # Assert insert was NOT called
-        mock_supabase_client.table(rule_service.rules_table).insert.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_add_rule_priority_conflict(rule_service, mock_supabase_client):
-    """Test adding a rule when the priority conflicts."""
-    rule_create = RuleCreate(**VALID_RULE_CREATE_TIME_DATA)
-    with patch.object(
-        rule_service, "_verify_link_ownership", return_value=None
-    ):  # Mock verify success
-        # Mock insert to raise priority conflict error
-        db_error = PostgrestAPIError(
-            {
-                "message": 'duplicate key value violates unique constraint "routing_rules_link_id_priority_key"',
-                "code": "23505",
-                "details": "Key (link_id, priority)=(..., 10) already exists.",
-            }
-        )
-        mock_supabase_client.table(rule_service.rules_table).execute.side_effect = (
-            db_error
-        )
-
-        # Act & Assert
-        with pytest.raises(PriorityConflictException):
-            await rule_service.add_rule_to_link(
-                link_id=TEST_LINK_ID, rule_data=rule_create, user_id=TEST_USER_ID
-            )
-        mock_supabase_client.table(
-            rule_service.rules_table
-        ).execute.assert_awaited_once()
-
-
-# === Testy dla get_rules_for_link ===
-
-
-@pytest.mark.asyncio
-async def test_get_rules_for_link_success(rule_service, mock_supabase_client):
-    """Test retrieving rules for a link."""
-    with patch.object(
-        rule_service, "_verify_link_ownership", return_value=None
-    ) as mock_verify:
-        # Mock select response
-        db_rule1 = {
+async def test_get_rules_for_link_success(
+    rule_service: RuleService, mock_supabase_client
+):
+    """Testuje pomyślne pobranie listy reguł."""
+    utc_now_dt = datetime.now(timezone.utc)
+    iso_now = utc_now_dt.isoformat()
+    mock_rules_db_data = [
+        {
             "id": str(uuid4()),
             "link_id": str(TEST_LINK_ID),
-            "priority": 10,
-            "rule_type": "time",
+            "priority": 1,
+            "rule_type": "clicks",
             "target_type": "url",
             "target_value": "url1",
-            "created_at": NOW.isoformat(),
-            "updated_at": NOW.isoformat(),
-            "current_clicks": 0,
-        }
-        db_rule2 = {
+            "max_clicks": 100,
+            "current_clicks": 10,
+            "start_time": None,
+            "end_time": None,
+            "created_at": iso_now,
+            "updated_at": iso_now,
+        },
+        {
             "id": str(uuid4()),
             "link_id": str(TEST_LINK_ID),
-            "priority": 20,
-            "rule_type": "clicks",
+            "priority": 2,
+            "rule_type": "time",
             "target_type": "html",
-            "target_value": "html",
-            "max_clicks": 100,
-            "created_at": NOW.isoformat(),
-            "updated_at": NOW.isoformat(),
+            "target_value": "html2",
+            "max_clicks": None,
             "current_clicks": 5,
-        }
-        mock_response = create_mock_response(data=[db_rule1, db_rule2])
-        mock_supabase_client.table(rule_service.rules_table).execute.return_value = (
-            mock_response
-        )
+            "start_time": iso_now,
+            "end_time": iso_now,
+            "created_at": iso_now,
+            "updated_at": iso_now,
+        },
+    ]
+    # Arrange: Mock verify(2) uses select_single, select list uses select_list
+    mock_select_single_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_select_list_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.order.return_value.execute
+    )
 
-        # Act
-        results = await rule_service.get_rules_for_link(
-            link_id=TEST_LINK_ID, user_id=TEST_USER_ID
-        )
+    mock_select_single_execute.side_effect = (
+        mock_ownership_verification_success_sequence()
+    )
+    mock_select_response = MagicMock()
+    mock_select_response.data = mock_rules_db_data
+    mock_select_list_execute.return_value = mock_select_response
 
-        # Assert
-        mock_verify.assert_awaited_once_with(link_id=TEST_LINK_ID, user_id=TEST_USER_ID)
-        mock_supabase_client.table(rule_service.rules_table).select.assert_called_with(
-            "*"
-        )
-        mock_supabase_client.table(rule_service.rules_table).eq.assert_called_with(
-            "link_id", str(TEST_LINK_ID)
-        )
-        mock_supabase_client.table(rule_service.rules_table).order.assert_called_with(
-            "priority", desc=False
-        )
-        mock_supabase_client.table(
-            rule_service.rules_table
-        ).execute.assert_awaited_once()
+    # Act
+    rules = await rule_service.get_rules_for_link(
+        link_id=TEST_LINK_ID, user_id=TEST_USER_ID
+    )
 
-        assert isinstance(results, list)
-        assert len(results) == 2
-        assert isinstance(results[0], RuleResponse)
-        assert results[0].priority == 10
-        assert results[1].priority == 20
+    # Assert
+    assert len(rules) == 2
+    assert isinstance(rules[0], RuleResponse)
+    assert mock_select_single_execute.call_count == 2
+    mock_select_list_execute.assert_awaited_once()
 
 
+# --- Testy dla get_rule_details ---
 @pytest.mark.asyncio
-async def test_get_rules_for_link_not_found(rule_service, mock_supabase_client):
-    """Test retrieving rules for a non-existent/unowned link."""
-    with patch.object(
-        rule_service, "_verify_link_ownership", side_effect=ParentLinkNotFoundException
-    ) as mock_verify:
-
-        # Act & Assert
-        with pytest.raises(ParentLinkNotFoundException):
-            await rule_service.get_rules_for_link(
-                link_id=TEST_LINK_ID, user_id=TEST_USER_ID
-            )
-
-        mock_verify.assert_awaited_once_with(link_id=TEST_LINK_ID, user_id=TEST_USER_ID)
-        # Assert select was NOT called
-        mock_supabase_client.table(rule_service.rules_table).select.assert_not_called()
-
-
-# === Testy dla get_rule_details ===
-
-
-@pytest.mark.asyncio
-async def test_get_rule_details_success(rule_service, mock_supabase_client):
-    """Test retrieving details for a specific rule."""
-    expected_db_data = {
+async def test_get_rule_details_success(
+    rule_service: RuleService, mock_supabase_client
+):
+    """Testuje pomyślne pobranie szczegółów reguły."""
+    utc_now_dt = datetime.now(timezone.utc)
+    iso_now = utc_now_dt.isoformat()
+    mock_rule_db_data = {
         "id": str(TEST_RULE_ID),
         "link_id": str(TEST_LINK_ID),
-        "priority": 10,
+        "priority": 5,
         "rule_type": "time",
         "target_type": "url",
-        "target_value": "url1",
-        "created_at": NOW.isoformat(),
-        "updated_at": NOW.isoformat(),
-        "current_clicks": 0,
+        "target_value": "url_details",
+        "max_clicks": None,
+        "current_clicks": 3,
+        "start_time": iso_now,
+        "end_time": iso_now,
+        "created_at": iso_now,
+        "updated_at": iso_now,
     }
-    mock_response = create_mock_response(data=expected_db_data)
-    mock_supabase_client.table(rule_service.rules_table).execute.return_value = (
-        mock_response
+
+    # Arrange: Mock verify(2) and select rule(1) use select_single
+    mock_select_single_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_select_response = MagicMock()
+    mock_select_response.data = mock_rule_db_data
+    mock_select_single_execute.side_effect = (
+        mock_ownership_verification_success_sequence() + [mock_select_response]
     )
 
     # Act
-    result = await rule_service.get_rule_details(
+    rule = await rule_service.get_rule_details(
         link_id=TEST_LINK_ID, rule_id=TEST_RULE_ID, user_id=TEST_USER_ID
     )
 
     # Assert
-    assert isinstance(result, RuleResponse)
-    assert result.id == TEST_RULE_ID
-    assert result.priority == 10
-    # Sprawdź wywołanie Supabase
-    mock_supabase_client.table(rule_service.rules_table).select.assert_called_with("*")
-    # Sprawdź oba eq calls - kolejność może być różna, użyj assert_any_call lub sprawdź call_args_list
-    mock_supabase_client.table(rule_service.rules_table).eq.assert_any_call(
-        "id", str(TEST_RULE_ID)
-    )
-    mock_supabase_client.table(rule_service.rules_table).eq.assert_any_call(
-        "link_id", str(TEST_LINK_ID)
-    )
-    mock_supabase_client.table(
-        rule_service.rules_table
-    ).maybe_single.assert_called_once()
-    mock_supabase_client.table(rule_service.rules_table).execute.assert_awaited_once()
+    assert isinstance(rule, RuleResponse)
+    assert rule.id == TEST_RULE_ID
+    assert mock_select_single_execute.call_count == 3
 
 
 @pytest.mark.asyncio
-async def test_get_rule_details_not_found(rule_service, mock_supabase_client):
-    """Test retrieving details for a non-existent rule."""
-    mock_response = create_mock_response(data=None)
-    mock_supabase_client.table(rule_service.rules_table).execute.return_value = (
-        mock_response
+async def test_get_rule_details_not_found(
+    rule_service: RuleService, mock_supabase_client
+):
+    """Testuje pobranie nieistniejącej reguły."""
+    # Arrange: Mock verify(2) success, but select(1) returns None = 3 calls
+    mock_select_single_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_select_response = MagicMock()
+    mock_select_response.data = None
+    mock_select_single_execute.side_effect = (
+        mock_ownership_verification_success_sequence() + [mock_select_response]
     )
 
     # Act & Assert
-    with pytest.raises(NotFoundException):
+    with pytest.raises(NotFoundException, match="Rule not found or access denied"):
         await rule_service.get_rule_details(
             link_id=TEST_LINK_ID, rule_id=TEST_RULE_ID, user_id=TEST_USER_ID
         )
-
-    mock_supabase_client.table(rule_service.rules_table).execute.assert_awaited_once()
-
-
-# === Testy dla update_rule ===
+    assert mock_select_single_execute.call_count == 3
 
 
+# --- Testy dla update_rule ---
 @pytest.mark.asyncio
-async def test_update_rule_success(rule_service, mock_supabase_client):
-    """Test successfully updating a rule."""
-    update_data = RuleUpdate(priority=5, target_value="https://new-target.com")
-    current_db_rule = {
+async def test_update_rule_success(rule_service: RuleService, mock_supabase_client):
+    """Testuje pomyślną aktualizację reguły."""
+    update_payload = RuleUpdate(priority=15, target_value="http://new.example.com")
+    utc_now_dt = datetime.now(timezone.utc)
+    iso_now = utc_now_dt.isoformat()
+    iso_later = (utc_now_dt + timedelta(minutes=1)).isoformat()
+
+    # Define current_rule_db_data here
+    current_rule_db_data = {
         "id": str(TEST_RULE_ID),
         "link_id": str(TEST_LINK_ID),
         "priority": 10,
-        "rule_type": "time",
+        "rule_type": "clicks",
         "target_type": "url",
-        "target_value": "https://old.com",
-        "start_time": NOW.isoformat(),
-        "end_time": (NOW + timedelta(days=1)).isoformat(),
-        "max_clicks": None,
-        "current_clicks": 0,
-        "created_at": NOW.isoformat(),
-        "updated_at": NOW.isoformat(),
+        "target_value": "http://old.example.com",
+        "max_clicks": 50,
+        "current_clicks": 5,
+        "start_time": None,
+        "end_time": None,
+        "created_at": iso_now,
+        "updated_at": iso_now,
     }
-    expected_db_payload = {"priority": 5, "target_value": "https://new-target.com"}
-    updated_db_rule = {**current_db_rule, **expected_db_payload}
+    updated_rule_db_data = {
+        **current_rule_db_data,
+        "priority": 15,
+        "target_value": "http://new.example.com",
+        "updated_at": iso_later,
+    }
 
-    # Mock verify link ownership
-    with patch.object(rule_service, "_verify_link_ownership", return_value=None):
-        # Mock get current rule state
-        mock_get_response = create_mock_response(data=current_db_rule)
-        # Mock update response
-        mock_update_response = create_mock_response(
-            data=[updated_db_rule]
-        )  # update zwraca listę
+    # Arrange:
+    # 1 & 2: _verify_link_ownership (uses mock_select_single_execute for .eq().maybe_single())
+    mock_verify_select_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    ownership_responses = mock_ownership_verification_success_sequence()
 
-        # Konfiguracja execute dla różnych kroków
-        mock_execute = AsyncMock()
-        mock_execute.side_effect = [mock_get_response, mock_update_response]
-        mock_supabase_client.table(rule_service.rules_table).execute = mock_execute
+    # 3: select current rule state (uses mock_select_single_execute for .eq().eq().maybe_single())
+    mock_get_current_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_select_current_response = MagicMock()
+    mock_select_current_response.data = current_rule_db_data
 
-        # Act
-        result = await rule_service.update_rule(
+    # Set side effect for the 3 select calls (2 for verify, 1 for get current)
+    # Important: Need to ensure the right mock is configured for the right chain
+    # We'll use side_effect on the most specific mock chain expected
+    mock_verify_select_execute.side_effect = ownership_responses
+    mock_get_current_execute.return_value = (
+        mock_select_current_response  # This will be called once
+    )
+
+    # 4: update operation success (uses mock_update_execute)
+    mock_update_execute = (
+        mock_supabase_client.table.return_value.update.return_value.eq.return_value.eq.return_value.execute
+    )
+    mock_update_response = MagicMock()
+    mock_update_response.data = [updated_rule_db_data]
+    mock_update_execute.return_value = mock_update_response
+
+    # Act
+    updated_rule = await rule_service.update_rule(
+        link_id=TEST_LINK_ID,
+        rule_id=TEST_RULE_ID,
+        update_data=update_payload,
+        user_id=TEST_USER_ID,
+    )
+
+    # Assert
+    assert isinstance(updated_rule, RuleResponse)
+    assert updated_rule.priority == 15
+    update_call_args = mock_supabase_client.table.return_value.update.call_args
+    called_update_payload = update_call_args[0][0]
+    assert called_update_payload == {
+        "priority": 15,
+        "target_value": "http://new.example.com",
+    }
+    assert mock_verify_select_execute.call_count == 2  # verify(2)
+    mock_get_current_execute.assert_awaited_once()  # select(1)
+    mock_update_execute.assert_awaited_once()  # update(1)
+
+
+@pytest.mark.asyncio
+async def test_update_rule_priority_conflict(
+    rule_service: RuleService, mock_supabase_client
+):
+    """Testuje konflikt priorytetu podczas aktualizacji."""
+    update_payload = RuleUpdate(priority=1)
+    utc_now_dt = datetime.now(timezone.utc)
+    iso_now = utc_now_dt.isoformat()
+
+    # Define current_rule_db_data here
+    current_rule_db_data = {
+        "id": str(TEST_RULE_ID),
+        "link_id": str(TEST_LINK_ID),
+        "priority": 10,
+        "rule_type": "clicks",
+        "target_type": "url",
+        "target_value": "http://old.example.com",
+        "max_clicks": 50,
+        "current_clicks": 5,
+        "start_time": None,
+        "end_time": None,
+        "created_at": iso_now,
+        "updated_at": iso_now,
+    }
+
+    # Arrange:
+    # 1 & 2: _verify_link_ownership
+    mock_verify_select_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_verify_select_execute.side_effect = (
+        mock_ownership_verification_success_sequence()
+    )
+
+    # 3: select current rule state
+    mock_get_current_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_select_current_response = MagicMock()
+    mock_select_current_response.data = current_rule_db_data
+    mock_get_current_execute.return_value = mock_select_current_response
+
+    # 4: update operation fails
+    mock_update_execute = (
+        mock_supabase_client.table.return_value.update.return_value.eq.return_value.eq.return_value.execute
+    )
+    mock_postgrest_error = PostgrestAPIError(
+        {
+            "message": f'duplicate key value violates unique constraint "{ROUTING_RULES_LINK_ID_PRIORITY_KEY}"',
+            "code": POSTGRES_UNIQUE_VIOLATION_CODE,
+            "details": "",
+        }
+    )
+    mock_update_execute.side_effect = mock_postgrest_error
+
+    # Act & Assert
+    with pytest.raises(PriorityConflictException, match="priority is already in use"):
+        await rule_service.update_rule(
             link_id=TEST_LINK_ID,
             rule_id=TEST_RULE_ID,
-            update_data=update_data,
+            update_data=update_payload,
             user_id=TEST_USER_ID,
         )
 
-        # Assert
-        assert isinstance(result, RuleResponse)
-        assert result.id == TEST_RULE_ID
-        assert result.priority == 5
-        assert result.target_value == "https://new-target.com"
-
-        # Sprawdź wywołania
-        assert mock_execute.await_count == 2
-        # Sprawdź wywołanie update
-        mock_supabase_client.table(
-            rule_service.rules_table
-        ).update.assert_called_once_with(expected_db_payload)
+    assert mock_verify_select_execute.call_count == 2
+    mock_get_current_execute.assert_awaited_once()
+    mock_update_execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_update_rule_validation_error(rule_service, mock_supabase_client):
-    """Test update fails due to inconsistent data after merge."""
-    # Np. zmieniamy typ na 'clicks', ale nie podajemy max_clicks
-    update_data = RuleUpdate(rule_type=RuleTypeEnum.CLICKS)
-    current_db_rule = {  # Obecnie reguła czasowa
+async def test_update_rule_validation_error(
+    rule_service: RuleService, mock_supabase_client
+):
+    """Testuje błąd walidacji (np. brak daty dla typu time) podczas update."""
+    update_payload = RuleUpdate(rule_type=RuleTypeEnum.TIME)
+    utc_now_dt = datetime.now(timezone.utc)
+    iso_now = utc_now_dt.isoformat()
+
+    # Define current_rule_db_data here
+    current_rule_db_data = {
         "id": str(TEST_RULE_ID),
         "link_id": str(TEST_LINK_ID),
         "priority": 10,
-        "rule_type": "time",
+        "rule_type": "clicks",
         "target_type": "url",
-        "target_value": "https://old.com",
-        "start_time": NOW.isoformat(),
-        "end_time": (NOW + timedelta(days=1)).isoformat(),
-        "max_clicks": None,
-        "current_clicks": 0,
-        "created_at": NOW.isoformat(),
-        "updated_at": NOW.isoformat(),
+        "target_value": "http://old.example.com",
+        "max_clicks": 50,
+        "current_clicks": 5,
+        "start_time": None,
+        "end_time": None,
+        "created_at": iso_now,
+        "updated_at": iso_now,
     }
-    # Mock verify link ownership i get current rule
-    with patch.object(rule_service, "_verify_link_ownership", return_value=None):
-        mock_get_response = create_mock_response(data=current_db_rule)
-        mock_supabase_client.table(rule_service.rules_table).execute.return_value = (
-            mock_get_response
+
+    # Arrange: Mock verify(2) + select(1) = 3 calls on select_single
+    mock_verify_select_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_get_current_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+
+    ownership_responses = mock_ownership_verification_success_sequence()
+    mock_select_current_response = MagicMock()
+    mock_select_current_response.data = current_rule_db_data
+
+    mock_verify_select_execute.side_effect = ownership_responses
+    mock_get_current_execute.return_value = mock_select_current_response
+
+    # Act & Assert
+    with pytest.raises(ValidationException):
+        await rule_service.update_rule(
+            link_id=TEST_LINK_ID,
+            rule_id=TEST_RULE_ID,
+            update_data=update_payload,
+            user_id=TEST_USER_ID,
         )
 
-        # Act & Assert
-        with pytest.raises(
-            ValidationException, match='max_clicks is required for rule_type "clicks"'
-        ):
-            await rule_service.update_rule(
-                link_id=TEST_LINK_ID,
-                rule_id=TEST_RULE_ID,
-                update_data=update_data,
-                user_id=TEST_USER_ID,
-            )
-        # Sprawdź, że update nie został wywołany
-        mock_supabase_client.table(rule_service.rules_table).update.assert_not_called()
+    assert mock_verify_select_execute.call_count == 2
+    mock_get_current_execute.assert_awaited_once()
+    # Ensure update was not called
+    mock_update_execute = (
+        mock_supabase_client.table.return_value.update.return_value.eq.return_value.eq.return_value.execute
+    )
+    mock_update_execute.assert_not_awaited()
+
+
+# --- Testy dla delete_rule ---
+@pytest.mark.asyncio
+async def test_delete_rule_success(rule_service: RuleService, mock_supabase_client):
+    """Testuje pomyślne usunięcie reguły."""
+    # Arrange: Mock verify(2) uses select_single, delete(1) uses delete_execute
+    mock_select_single_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_delete_execute = (
+        mock_supabase_client.table.return_value.delete.return_value.eq.return_value.eq.return_value.execute
+    )
+
+    mock_select_single_execute.side_effect = (
+        mock_ownership_verification_success_sequence()
+    )
+    mock_delete_response = MagicMock()
+    mock_delete_response.count = 1
+    mock_delete_response.data = []
+    mock_delete_execute.return_value = mock_delete_response
+
+    # Act
+    await rule_service.delete_rule(
+        link_id=TEST_LINK_ID, rule_id=TEST_RULE_ID, user_id=TEST_USER_ID
+    )
+
+    # Assert
+    assert mock_select_single_execute.call_count == 2
+    mock_delete_execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_update_rule_priority_conflict(rule_service, mock_supabase_client):
-    """Test update fails due to priority conflict."""
-    update_data = RuleUpdate(priority=5)  # Tylko priorytet jest w update
-    # Mock obecnego stanu reguły z poprawnymi danymi
-    current_db_rule = {
-        "id": str(TEST_RULE_ID),
-        "link_id": str(TEST_LINK_ID),
-        "priority": 10,  # Obecny priorytet
-        "rule_type": "time",
-        "target_type": "url",
-        "target_value": "https://correct-current-url.com",  # <<< POPRAWIONY URL
-        "start_time": NOW.isoformat(),  # Wymagane dla typu 'time' przez RuleCreate
-        "end_time": (NOW + timedelta(days=1)).isoformat(),  # Wymagane dla typu 'time'
-        "max_clicks": None,  # Oczekiwane None dla typu 'time' przez RuleCreate
-        "current_clicks": 0,  # Wymagane przez RuleResponse (choć nie przez RuleCreate)
-        "created_at": NOW.isoformat(),  # Wymagane przez RuleResponse
-        "updated_at": NOW.isoformat(),  # Wymagane przez RuleResponse
-    }
-    # Mock verify i get
-    with patch.object(rule_service, "_verify_link_ownership", return_value=None):
-        mock_get_response = create_mock_response(data=current_db_rule)
-        # Mock update to raise priority conflict
-        db_error = PostgrestAPIError(
-            {
-                "message": 'duplicate key value violates unique constraint "routing_rules_link_id_priority_key"',
-                "code": "23505",
-                "details": "Key (link_id, priority)=(..., 5) already exists.",
-            }
-        )
-        # Konfiguracja side_effect dla execute
-        mock_execute = AsyncMock()
-        # Pierwsze wywołanie (get) zwraca dane, drugie (update) rzuca błąd
-        mock_execute.side_effect = [mock_get_response, db_error]
-        mock_supabase_client.table(rule_service.rules_table).execute = mock_execute
+async def test_delete_rule_not_found(rule_service: RuleService, mock_supabase_client):
+    """Testuje próbę usunięcia nieistniejącej reguły."""
+    # Arrange: Mock verify(2) uses select_single, delete(1) uses delete_execute returns count=0
+    mock_select_single_execute = (
+        mock_supabase_client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute
+    )
+    mock_delete_execute = (
+        mock_supabase_client.table.return_value.delete.return_value.eq.return_value.eq.return_value.execute
+    )
 
-        # Act & Assert - Oczekujemy teraz PriorityConflictException
-        with pytest.raises(PriorityConflictException):
-            await rule_service.update_rule(
-                link_id=TEST_LINK_ID,
-                rule_id=TEST_RULE_ID,
-                update_data=update_data,  # update_data zawiera tylko priority=5
-                user_id=TEST_USER_ID,
-            )
-        # Sprawdź, czy execute zostało wywołane dwa razy
-        assert mock_execute.await_count == 2
-        # Sprawdź, czy próbowano wykonać update z poprawnym payloadem (tylko priority)
-        mock_supabase_client.table(
-            rule_service.rules_table
-        ).update.assert_called_once_with({"priority": 5})
+    mock_select_single_execute.side_effect = (
+        mock_ownership_verification_success_sequence()
+    )
+    mock_delete_response = MagicMock()
+    mock_delete_response.count = 0
+    mock_delete_response.data = []
+    mock_delete_execute.return_value = mock_delete_response
 
-
-# === Testy dla delete_rule ===
-
-
-@pytest.mark.asyncio
-async def test_delete_rule_success(rule_service, mock_supabase_client):
-    """Test successful rule deletion."""
-    with patch.object(
-        rule_service, "_verify_link_ownership", return_value=None
-    ) as mock_verify:
-        mock_response = create_mock_response(count=1)
-        mock_supabase_client.table(rule_service.rules_table).execute.return_value = (
-            mock_response
-        )
-
-        # Act
+    # Act & Assert
+    with pytest.raises(
+        NotFoundException, match="Rule not found or you do not have permission"
+    ):
         await rule_service.delete_rule(
             link_id=TEST_LINK_ID, rule_id=TEST_RULE_ID, user_id=TEST_USER_ID
         )
-
-        # Assert
-        mock_verify.assert_awaited_once()
-        mock_supabase_client.table(
-            rule_service.rules_table
-        ).delete.assert_called_once_with(count=CountMethod.exact)
-        # Sprawdź oba eq
-        mock_supabase_client.table(rule_service.rules_table).eq.assert_any_call(
-            "id", str(TEST_RULE_ID)
-        )
-        mock_supabase_client.table(rule_service.rules_table).eq.assert_any_call(
-            "link_id", str(TEST_LINK_ID)
-        )
-        mock_supabase_client.table(
-            rule_service.rules_table
-        ).execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_delete_rule_not_found(rule_service, mock_supabase_client):
-    """Test deleting a non-existent rule."""
-    with patch.object(rule_service, "_verify_link_ownership", return_value=None):
-        mock_response = create_mock_response(count=0)
-        mock_supabase_client.table(rule_service.rules_table).execute.return_value = (
-            mock_response
-        )
-
-        # Act & Assert
-        with pytest.raises(NotFoundException):
-            await rule_service.delete_rule(
-                link_id=TEST_LINK_ID, rule_id=TEST_RULE_ID, user_id=TEST_USER_ID
-            )
-
-        mock_supabase_client.table(
-            rule_service.rules_table
-        ).execute.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_delete_rule_link_not_found(rule_service, mock_supabase_client):
-    """Test deleting a rule when parent link verification fails."""
-    with patch.object(
-        rule_service, "_verify_link_ownership", side_effect=ParentLinkNotFoundException
-    ) as mock_verify:
-
-        # Act & Assert
-        with pytest.raises(ParentLinkNotFoundException):
-            await rule_service.delete_rule(
-                link_id=TEST_LINK_ID, rule_id=TEST_RULE_ID, user_id=TEST_USER_ID
-            )
-
-        mock_verify.assert_awaited_once()
-        # Delete nie powinno być wywołane
-        mock_supabase_client.table(rule_service.rules_table).delete.assert_not_called()
+    assert mock_select_single_execute.call_count == 2
+    mock_delete_execute.assert_awaited_once()

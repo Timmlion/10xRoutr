@@ -1,10 +1,20 @@
 # src/api/v1/endpoints/rules.py (Corrected - Removed Path parameter for link_id where appropriate)
 
-from fastapi import APIRouter, Depends, HTTPException, Path, status, Request, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Path,
+    status,
+    Request,
+    Response,
+    Form,
+)
 from fastapi.templating import Jinja2Templates
 from uuid import UUID
 from typing import List, Optional
 import traceback
+from datetime import datetime
 
 # Import modeli Pydantic (DTOs)
 from src.schemas.rule import RuleCreate, RuleUpdate, RuleResponse
@@ -42,7 +52,12 @@ async def get_rule_create_form_partial(
     print(f"Fetching create form partial for link {link_id}")
     return templates.TemplateResponse(
         "partials/rule_form.html",
-        {"request": request, "link_id": link_id, "rule": None},
+        {
+            "request": request,
+            "link_id": link_id,
+            "rule": None,
+            "now": datetime.utcnow(),
+        },
     )
 
 
@@ -74,7 +89,12 @@ async def get_rule_edit_form_partial(
         )
         return templates.TemplateResponse(
             "partials/rule_form.html",
-            {"request": request, "link_id": link_id, "rule": rule},
+            {
+                "request": request,
+                "link_id": link_id,
+                "rule": rule,
+                "now": datetime.utcnow(),
+            },
         )
     except NotFoundException as e:
         print(
@@ -148,40 +168,118 @@ async def get_rules_list_partial(
 
 # --- Endpoint POST / (tworzenie reguły) ---
 @router.post(
-    "/",
+    "/create",
     response_model=RuleResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create Rule",
-    description="Adds a new routing rule to a specific link owned by the authenticated user.",
+    summary="Create Rule from Form Data",
+    description="Adds a new routing rule using form data.",
     tags=["Rules"],
 )
 async def create_rule_endpoint(
-    rule_data: RuleCreate,
-    link_id: UUID,  # <<< Usunięto Path(...)
+    link_id: UUID,
+    # --- Przyjmowanie danych formularza ---
+    priority: int = Form(...),
+    rule_type: str = Form(...),  # Enumy odbieramy jako stringi
+    target_type: str = Form(...),
+    target_value: str = Form(...),
+    start_time: Optional[str] = Form(None),  # Odbieramy daty jako stringi
+    end_time: Optional[str] = Form(None),
+    max_clicks: Optional[str] = Form(
+        None
+    ),  # <<< ZMIANA: Odbieramy jako Optional[str], bo może przyjść ""
+    # --------------------------------------
     current_user_id: UUID = Depends(get_current_user_id),
     rule_service: RuleService = Depends(get_rule_service),
 ):
-    """Creates a new routing rule for the specified link."""
+    """Creates a new routing rule for the specified link from form data."""
     print(
-        f"Received request to create rule for link {link_id} by user {current_user_id} with data: {rule_data.model_dump()}"
+        f"Received request to create rule via form for link {link_id} by user {current_user_id}"
     )
+    print(
+        f"Raw form data: priority={priority}, rule_type={rule_type}, target_type={target_type}, target_value={target_value}, start={start_time}, end={end_time}, max_clicks={max_clicks}"
+    )
+
+    # Ręcznie stwórz słownik i skonwertuj/waliduj
+    rule_data_dict: Dict[str, Any] = {  # Używamy Any dla elastyczności przed walidacją
+        "priority": priority,
+        "rule_type": rule_type,
+        "target_type": target_type,
+        "target_value": target_value,
+    }
+
+    # --- POPRAWKA: Obsługa pustych stringów dla pól opcjonalnych ---
+    parsed_start_time = None
+    if (
+        start_time and start_time.strip()
+    ):  # Sprawdź czy nie jest None i nie jest pusty/białe znaki
+        try:
+            parsed_start_time = datetime.strptime(start_time.strip(), "%Y-%m-%d %H:%M")
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid format for start_time: '{start_time}'. Use YYYY-MM-DD HH:MM.",
+            )
+    rule_data_dict["start_time"] = (
+        parsed_start_time  # Przypisz sparsowaną datę lub None
+    )
+
+    parsed_end_time = None
+    if end_time and end_time.strip():
+        try:
+            parsed_end_time = datetime.strptime(end_time.strip(), "%Y-%m-%d %H:%M")
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid format for end_time: '{end_time}'. Use YYYY-MM-DD HH:MM.",
+            )
+    rule_data_dict["end_time"] = parsed_end_time
+
+    parsed_max_clicks = None
+    if (
+        max_clicks and max_clicks.strip()
+    ):  # Sprawdź czy nie jest None i nie jest pusty/białe znaki
+        try:
+            parsed_max_clicks = int(max_clicks.strip())
+            if parsed_max_clicks < 1:  # Dodatkowa walidacja wartości
+                raise ValueError("max_clicks must be positive")
+        except ValueError:
+            # Złapie zarówno błąd konwersji int(), jak i nasz ValueError
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid value for max_clicks: '{max_clicks}'. Must be a positive integer.",
+            )
+    rule_data_dict["max_clicks"] = parsed_max_clicks
+    # ---------------------------------------------------------------
+
+    try:
+        # Walidacja Pydantic - teraz powinna otrzymać None zamiast "" dla max_clicks
+        print(f"Data prepared for Pydantic validation: {rule_data_dict}")
+        rule_data = RuleCreate.model_validate(rule_data_dict)
+        print("RuleCreate DTO validated:", rule_data.model_dump())
+    except Exception as validation_error:
+        print(f"Validation error creating RuleCreate DTO: {validation_error}")
+        # Formatowanie błędu Pydantic
+        error_details = getattr(
+            validation_error, "errors", lambda: [{"msg": str(validation_error)}]
+        )()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=error_details,  # Przekaż szczegóły błędu walidacji
+        )
+
+    # Kontynuuj z logiką serwisu
     try:
         created_rule = await rule_service.add_rule_to_link(
             link_id=link_id, rule_data=rule_data, user_id=current_user_id
         )
         return created_rule
+    # ... (reszta obsługi błędów serwisu bez zmian) ...
     except NotFoundException as e:
-        print(
-            f"[NOT FOUND] Parent link {link_id} not found or access denied: {e.detail}"
-        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Parent link not found or access denied.",
         )
     except (PriorityConflictException, ValidationException) as e:
-        print(
-            f"[CONFLICT/VALIDATION] Error creating rule for link {link_id}: {e.detail}"
-        )
         status_code = (
             status.HTTP_409_CONFLICT
             if isinstance(e, PriorityConflictException)
@@ -189,15 +287,11 @@ async def create_rule_endpoint(
         )
         raise HTTPException(status_code=status_code, detail=e.detail)
     except (DatabaseException, ServiceException) as e:
-        print(f"[ERROR] DB/Service error creating rule for link {link_id}: {e.detail}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Server error: {e.detail}",
         )
     except Exception as e:
-        print(
-            f"[ERROR] Unexpected error in create_rule_endpoint for link {link_id}: {e}"
-        )
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

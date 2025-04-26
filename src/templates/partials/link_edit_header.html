@@ -1,4 +1,4 @@
-{# Ten szablon renderuje nagłówek strony edycji i formularz default_url #} {#
+{# src/templates/partials/link_edit_header.html (Corrected with Script) #} {#
 Oczekuje zmiennej 'link' (obiekt LinkResponse) w kontekście #} {% if link %} {#
 Wyświetlanie aliasu i przycisk Kopiuj URL #}
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -26,20 +26,22 @@ Wyświetlanie aliasu i przycisk Kopiuj URL #}
   <div class="col-md-8 col-lg-6">
     {# Miejsce na komunikaty TYLKO dla tego formularza #}
     <div id="default-url-message-area" class="mb-1"></div>
+    {# ID celu komunikatu #}
 
     <form
       id="default-url-form"
       hx-patch="/api/v1/links/{{ link.id }}"
-      {#
-      Używamy
-      link.id
-      z
-      kontekstu
-      #}
       hx-target="#default-url-message-area"
-      hx-swap="innerHTML"
-      hx-indicator="#default-url-spinner"
+      hx-swap="none"
+      {#
+      <<<
+      WAŻNE:
+      Nie
+      podmieniaj
+      odpowiedzi
+      domyślnie
     >
+      >> #} hx-indicator="#default-url-spinner">
       <label for="default_url" class="form-label"
         >Domyślny URL Przekierowania</label
       >
@@ -73,4 +75,98 @@ Wyświetlanie aliasu i przycisk Kopiuj URL #}
 <div class="alert alert-warning" role="alert">
   Nie udało się załadować danych linku.
 </div>
-{% endif %}
+{% endif %} {# --- Skrypt TYLKO dla tego fragmentu (obsługa odpowiedzi
+formularza default_url) --- #}
+<script>
+  (function () {
+    // Używamy IIFE, aby uniknąć konfliktu zmiennych, gdy ten partial jest ładowany wielokrotnie
+    const formElement = document.getElementById("default-url-form");
+    // Czasami ID messageArea może nie być unikalne, jeśli partial jest renderowany bez przeładowania
+    // Bezpieczniej jest znaleźć messageArea względem formularza
+    const messageArea = formElement ? formElement.previousElementSibling : null; // Znajdź poprzedni element (div message area)
+
+    if (!formElement) {
+      // Jeśli formularz nie istnieje (np. w przypadku błędu ładowania linku), nie rób nic
+      // console.log("Default URL form not found in this partial instance.");
+      return;
+    }
+    if (!messageArea || messageArea.id !== "default-url-message-area") {
+      console.error(
+        "Could not find default URL message area relative to the form."
+      );
+      return;
+    }
+
+    console.log("Attaching afterRequest listener to default URL form.");
+
+    // Listener dla odpowiedzi HTMX z TEGO formularza
+    formElement.addEventListener("htmx:afterRequest", function (evt) {
+      // Upewnij się, że event pochodzi DOKŁADNIE z tego formularza
+      if (evt.target !== formElement) {
+        return;
+      }
+
+      console.log("Received response for default URL form.");
+      messageArea.innerHTML = ""; // Zawsze czyść poprzednie komunikaty
+
+      const xhr = evt.detail.xhr;
+
+      if (evt.detail.successful) {
+        // Sprawdza status 2xx
+        console.log("Default URL update successful.");
+        // Sukces - pokaż komunikat o sukcesie
+        messageArea.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert">
+                                        Domyślny URL zapisany pomyślnie.
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                      </div>`;
+        // Opcjonalnie: Zaktualizuj wartość pola input na podstawie odpowiedzi
+        try {
+          const responseData = JSON.parse(xhr.responseText);
+          const inputField = formElement.querySelector("#default_url"); // Znajdź input w formularzu
+          if (inputField && "default_url" in responseData) {
+            // Sprawdź czy klucz istnieje
+            inputField.value = responseData.default_url || ""; // Ustaw na pusty jeśli null/brak
+          }
+        } catch (e) {
+          console.error("Failed to update input field value after PATCH:", e);
+        }
+      } else {
+        // Błąd - pokaż komunikat o błędzie
+        console.error("Default URL update failed.", evt.detail);
+        let userFriendlyMessage = "Wystąpił nieznany błąd podczas zapisu.";
+        try {
+          const errorResponse = JSON.parse(xhr.responseText);
+          if (
+            xhr.status === 422 &&
+            errorResponse.detail &&
+            Array.isArray(errorResponse.detail)
+          ) {
+            userFriendlyMessage = "Błąd walidacji:<ul>";
+            errorResponse.detail.forEach((err) => {
+              const fieldName =
+                err.loc && err.loc.length > 1 ? err.loc[1] : "dane";
+              const fieldLabel =
+                fieldName === "default_url" ? "Domyślny URL" : fieldName;
+              const msg = err.msg || "Nieprawidłowa wartość.";
+              userFriendlyMessage += `<li>Pole '${fieldLabel}': ${msg}</li>`;
+            });
+            userFriendlyMessage += "</ul>";
+          } else if (
+            errorResponse.detail &&
+            typeof errorResponse.detail === "string"
+          ) {
+            userFriendlyMessage = errorResponse.detail;
+          } else {
+            userFriendlyMessage = `Błąd serwera (status: ${xhr.status}).`;
+          }
+        } catch (e) {
+          userFriendlyMessage = `Błąd serwera (status: ${xhr.status}).`;
+        }
+        messageArea.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                        ${userFriendlyMessage}
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                      </div>`;
+      }
+    });
+  })(); // Wywołaj IIFE
+</script>

@@ -5,6 +5,7 @@ import traceback
 
 # Usunięto import uuid, bo UUID jest importowane bezpośrednio
 from typing import List, Union, Optional
+from pydantic import HttpUrl
 
 # FastAPI imports
 from fastapi import (
@@ -322,36 +323,65 @@ async def get_link_endpoint(
 @router.patch(
     "/{link_id}",
     response_model=LinkResponse,
-    summary="Update Link Details",
-    description="Updates the default URL of a specific routr link owned by the authenticated user. Alias cannot be changed.",
+    summary="Update Link Details (Form Data)",  # Zaktualizuj opis
+    description="Updates the default URL of a specific routr link using form data. Alias cannot be changed.",
     tags=["Links"],
 )
 async def update_link_endpoint(
-    update_data: LinkUpdate,
+    # Zamiast update_data: LinkUpdate, przyjmujemy dane formularza
     link_id: UUID = Path(..., description="The ID of the link to update"),
+    default_url: Optional[str] = Form(None),  # Odbieramy jako string lub None
     current_user_id: UUID = Depends(get_current_user_id),
     link_service: LinkService = Depends(get_link_service),
 ):
-    """Updates the default URL for a specific link."""
-    update_payload_info = update_data.model_dump(exclude_unset=True)
+    """Updates the default URL for a specific link using form data."""
     print(
-        f"Received request to update link {link_id} for user {current_user_id} with data: {update_payload_info}"
+        f"Received request to update link {link_id} via form for user {current_user_id} with default_url: '{default_url}'"
     )
+
+    # Ręcznie stwórz obiekt DTO LinkUpdate
+    update_data_dict = {}
+    # Jeśli default_url przyszło jako pusty string, traktujemy to jako chęć usunięcia (null)
+    # Jeśli przyszło jako None (bo pole nie zostało wysłane), Pydantic też ustawi None
+    # Jeśli przyszło jako niepusty string, dodajemy go do słownika
+    if default_url is not None:  # Sprawdzamy None, pusty string jest OK
+        update_data_dict["default_url"] = default_url if default_url else None
+        # Alternatywnie, jeśli pusty string ma oznaczać błąd:
+        # if default_url == "":
+        #     raise HTTPException(status_code=422, detail="Default URL cannot be empty if provided. Leave blank to remove.")
+        # else:
+        #      update_data_dict["default_url"] = default_url
+
+    try:
+        # Walidujemy utworzony słownik za pomocą modelu Pydantic
+        # Jeśli default_url jest None lub poprawnym URL, walidacja przejdzie
+        # Jeśli jest niepustym, ale niepoprawnym URL, model zgłosi błąd
+        update_data = LinkUpdate.model_validate(update_data_dict)
+    except Exception as validation_error:
+        print(f"Validation error creating LinkUpdate DTO: {validation_error}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid form data: {validation_error}",
+        )
+
+    # Kontynuujemy z logiką serwisu, używając zwalidowanego obiektu update_data
     try:
         updated_link = await link_service.update_link(
             link_id=link_id, update_data=update_data, user_id=current_user_id
         )
+        # Zwracamy pełny obiekt linku, aby UI mogło się zaktualizować (jeśli potrzebuje)
+        # W naszym przypadku HTMX po prostu wyświetli komunikat sukcesu/błędu.
+        print(f"Link {link_id} updated successfully.")
         return updated_link
     except LinkNotFoundException as e:
-        print(
-            f"[NOT FOUND] {e.detail} during update for link {link_id}, user {current_user_id}"
-        )
+        print(f"[NOT FOUND] {e.detail} during update for link {link_id}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.detail)
-    except ValidationException as e:
+    except (
+        ValidationException
+    ) as e:  # Błędy walidacji z serwisu (chociaż większość powinna być złapana wyżej)
         print(
-            f"[BAD REQUEST] Validation error during update for link {link_id}: {e.detail}"
+            f"[BAD REQUEST] Validation error during service update for link {link_id}: {e.detail}"
         )
-        # Zwróć 422 dla błędów walidacji z Pydantic/serwisu
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=e.detail
         )
@@ -359,7 +389,7 @@ async def update_link_endpoint(
         print(f"[ERROR] DB/Service error updating link {link_id}: {e.detail}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"A server error occurred during update: {e.detail}",
+            detail=f"Server error: {e.detail}",
         )
     except Exception as e:
         print(f"[ERROR] Unexpected error updating link {link_id}: {e}")

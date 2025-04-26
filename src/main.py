@@ -242,6 +242,15 @@ async def read_root_redirect():
     return RedirectResponse(url="/app/", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
+# <<< DODAJ TEN BLOK DO DEBUGOWANIA >>>
+print("\n--- Registered Routes ---")
+for route in app.routes:
+    if hasattr(route, "path") and hasattr(route, "methods"):
+        print(f"Path: {route.path}, Methods: {route.methods}")
+    # Obsługa APIRouter (jeśli chcesz zobaczyć ścieżki wewnątrz routerów)
+    # elif isinstance(route, routing.APIRoute): # Potrzebny import from starlette import routing
+    #     print(f"Route: {route.path}, Methods: {route.methods}")
+print("-------------------------\n")
 # --- Uruchomienie ---
 if __name__ == "__main__":
     print("Starting Uvicorn server for local development...")
