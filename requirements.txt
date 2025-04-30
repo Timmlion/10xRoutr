@@ -54,3 +54,4 @@ python-multipart
 pytest
 pytest-mock
 pytest-asyncio
+email-validator
