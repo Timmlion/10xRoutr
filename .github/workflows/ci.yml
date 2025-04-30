@@ -15,6 +15,13 @@ jobs:
       matrix:
         python-version: ["3.11"]
 
+    # Use secrets (containing dummy values for these tests)
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      GLOBAL_FALLBACK_URL: ${{ secrets.GLOBAL_FALLBACK_URL }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -38,8 +45,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 5. Run tests using pytest, invoking it as a module via python
-      # This ensures the project root is added to sys.path, resolving 'src' imports
       - name: Run tests
         run: |
-          python -m pytest -v # Use the same command as locally
+          # This command now runs in an environment where the required env vars
+          # exist (even if they are dummy values), allowing Settings() to load.
+          # Your mocks will prevent these dummy values from being used for actual calls.
+          python -m pytest -v
