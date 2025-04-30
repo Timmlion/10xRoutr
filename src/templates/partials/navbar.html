@@ -1,7 +1,13 @@
+{# src/templates/partials/navbar.html #} {# Standard Bootstrap 5 Navbar
+component #}
 <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
+  {# Basic styling: light background, bottom margin #}
   <div class="container-fluid">
+    {# Full width container #} {# Brand/Logo linking to the main dashboard view
+    #}
     <a class="navbar-brand" href="{{ url_for('render_dashboard') }}">routr</a>
-    {# Zakładamy nazwę endpointu dashboardu #}
+    {# Uses FastAPI's url_for to generate the link dynamically #} {# Standard
+    Bootstrap toggler button for mobile viewports #}
     <button
       class="navbar-toggler"
       type="button"
@@ -13,26 +19,34 @@
     >
       <span class="navbar-toggler-icon"></span>
     </button>
+
+    {# Collapsible content wrapper #}
     <div class="collapse navbar-collapse" id="navbarNav">
+      {# Main navigation links, aligned to the left #}
       <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        {# me-auto pushes subsequent items to the right #}
         <li class="nav-item">
-          {# Można dodać klasę 'active' jeśli jesteśmy na tej stronie #}
+          {# Link to the dashboard/link list page. Add 'active' class
+          conditionally if needed. #}
           <a class="nav-link" href="{{ url_for('render_dashboard') }}"
-            >Moje Linki</a
+            >My Links</a
           >
         </li>
         <li class="nav-item">
+          {# Link to the page/view for creating a new link #}
           <a class="nav-link" href="{{ url_for('render_create_link_form') }}"
-            >Utwórz nowy link</a
+            >Create new link</a
           >
-          {# Zakładamy nazwę endpointu formularza tworzenia #}
         </li>
       </ul>
+
+      {# User-related actions, aligned to the right #}
       <ul class="navbar-nav ms-auto">
+        {# ms-auto pushes this block to the right #}
         <li class="nav-item">
-          {# Przycisk wylogowania będzie miał logikę JS #}
+          {# Logout Button - functionality implemented in the script below #}
           <button id="logout-button" class="btn btn-outline-secondary">
-            Wyloguj
+            Logout
           </button>
         </li>
       </ul>
@@ -40,14 +54,20 @@
   </div>
 </nav>
 
+{# JavaScript for handling the client-side logout action #}
 <script>
-  // Logika wylogowania
+  // Find the logout button element by its ID.
   const logoutButton = document.getElementById("logout-button");
   if (logoutButton) {
+    // Add a click event listener if the button exists.
     logoutButton.addEventListener("click", function () {
-      console.log("Logging out..."); // Log MVP
-      sessionStorage.removeItem("routr_access_token"); // Usuwamy token
-      window.location.href = "{{ url_for('render_login_page') }}"; // Przekierowujemy do logowania
+      console.log("Logging out..."); // Simple log message for debugging.
+      // Remove the stored access token from session storage.
+      // This effectively logs the user out on the client-side.
+      sessionStorage.removeItem("routr_access_token"); // Assumes token is stored with this key.
+      // Redirect the browser to the login page.
+      // Uses Jinja2's url_for to generate the correct login page URL during server-side rendering.
+      window.location.href = "{{ url_for('render_login_page') }}";
     });
   }
 </script>

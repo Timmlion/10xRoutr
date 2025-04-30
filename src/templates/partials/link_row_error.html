@@ -1,6 +1,21 @@
+{# src/templates/partials/link_row_error.html (or a similar generic table row
+error partial) #} {# This partial template renders a single table row (
 <tr>
+  ) designed to display an error message, typically spanning multiple columns in
+  a table. It's used when fetching table data (like the list of links) fails.
+  Expected Jinja2 context variables: - error_message (optional): A specific
+  error message passed from the server. #}
+</tr>
+
+<tr>
+  {# Table Data cell spanning 4 columns (adjust colspan based on the table
+  structure where this is used). Uses Bootstrap text utilities for centering and
+  error color. #}
   <td colspan="4" class="text-center text-danger">
-    <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error_message |
-    default('Wystąpił błąd podczas ładowania danych.') }}
+    {# Include a Bootstrap Icon for visual indication of an error. #}
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+    {# Display the provided 'error_message'. Use the 'default' filter for a
+    fallback message if 'error_message' is not available. #} {{ error_message |
+    default('An error occurred while loading the data.') }}
   </td>
 </tr>

@@ -1,172 +1,174 @@
-{# src/templates/partials/link_edit_header.html (Corrected with Script) #} {#
-Oczekuje zmiennej 'link' (obiekt LinkResponse) w kontekście #} {% if link %} {#
-Wyświetlanie aliasu i przycisk Kopiuj URL #}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h1 class="mb-0">
-    Edycja Linku: <span class="text-primary fw-bold">{{ link.alias }}</span>
-  </h1>
-  {# Przycisk Kopiuj URL - działa dzięki JS z base.html #}
-  <button
-    class="btn btn-outline-secondary copy-url-button"
-    data-url="{{ request.base_url }}{{ link.alias }}"
-    {#
-    Używamy
-    base_url
-    z
-    request
-    #}
-    title="Kopiuj URL"
-  >
-    <i class="bi bi-clipboard me-1"></i> Kopiuj Pełny URL
-  </button>
-</div>
+{# src/templates/partials/link_edit_header.html #}
+{#
+  This partial template renders the header section for the link edit page.
+  It expects a 'link' object (LinkResponse schema) in the Jinja2 context.
+#}
 
-{# Formularz do edycji Default URL #}
-<div class="row mb-4">
-  <div class="col-md-8 col-lg-6">
-    {# Miejsce na komunikaty TYLKO dla tego formularza #}
-    <div id="default-url-message-area" class="mb-1"></div>
-    {# ID celu komunikatu #}
+{% if link %} {# Only render if the link data was successfully passed to the template #}
 
-    <form
-      id="default-url-form"
-      hx-patch="/api/v1/links/{{ link.id }}"
-      hx-target="#default-url-message-area"
-      hx-swap="none"
-      {#
-      <<<
-      WAŻNE:
-      Nie
-      podmieniaj
-      odpowiedzi
-      domyślnie
+  {# Display Link Alias and Copy Button #}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">
+      Editing Link: <span class="text-primary fw-bold">{{ link.alias }}</span>
+    </h1>
+    {# Button to copy the full absolute URL of the link to the clipboard.
+       Relies on global JavaScript (e.g., in base.html) to handle the click event
+       and read the 'data-url' attribute. Uses the request's base URL to construct
+       the full path. #}
+    <button
+      class="btn btn-outline-secondary copy-url-button"
+      data-url="{{ request.base_url }}{{ link.alias }}"
+      title="Copy Full URL"
     >
-      >> #} hx-indicator="#default-url-spinner">
-      <label for="default_url" class="form-label"
-        >Domyślny URL Przekierowania</label
-      >
-      <div class="input-group">
-        <input
-          type="url"
-          class="form-control"
-          id="default_url"
-          name="default_url"
-          value="{{ link.default_url if link.default_url else '' }}"
-          placeholder="https://... (pozostaw puste, aby usunąć)"
-        />
-        <button class="btn btn-outline-primary" type="submit">
-          Zapisz Zmiany
-          <span
-            id="default-url-spinner"
-            class="htmx-indicator spinner-border spinner-border-sm"
-            role="status"
-            aria-hidden="true"
-          ></span>
-        </button>
-      </div>
-      <div id="defaultUrlHelp" class="form-text">
-        URL używany, gdy żadna reguła nie pasuje.
-      </div>
-    </form>
+      <i class="bi bi-clipboard me-1"></i> Copy Full URL
+    </button>
   </div>
-</div>
 
-{% else %} {# Komunikat, jeśli z jakiegoś powodu link nie został załadowany #}
-<div class="alert alert-warning" role="alert">
-  Nie udało się załadować danych linku.
-</div>
-{% endif %} {# --- Skrypt TYLKO dla tego fragmentu (obsługa odpowiedzi
-formularza default_url) --- #}
+  {# Form for Editing the Link's Default URL #}
+  <div class="row mb-4">
+    <div class="col-md-8 col-lg-6">
+      {# Dedicated area to display success/error messages specifically for this form.
+         Targeted by the hx-target attribute, but content is managed by JavaScript due to hx-swap="none". #}
+      <div id="default-url-message-area" class="mb-1"></div>
+
+      {# The form submits changes via PATCH request using HTMX. #}
+      <form
+        id="default-url-form"
+        hx-patch="/api/v1/links/{{ link.id }}" {# Sends a PATCH request to the link's update endpoint #}
+        hx-target="#default-url-message-area" {# Identifies where messages *could* go, but JS handles it #}
+        hx-swap="none" {# IMPORTANT: Prevents HTMX from swapping content automatically. Response is handled by the script below. #}
+        hx-indicator="#default-url-spinner" {# Shows the spinner element during the request #}
+      >
+        <label for="default_url" class="form-label">Default Redirect URL</label>
+        <div class="input-group">
+          <input
+            type="url" {# Use type="url" for basic browser validation #}
+            class="form-control"
+            id="default_url"
+            name="default_url" {# Name attribute used for form submission #}
+            value="{{ link.default_url if link.default_url else '' }}" {# Pre-fill with current value, empty string if None #}
+            placeholder="https://... (leave blank to clear)"
+          />
+          <button class="btn btn-outline-primary" type="submit">
+            Save Changes
+            {# Spinner element shown during HTMX request via hx-indicator #}
+            <span id="default-url-spinner" class="htmx-indicator spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div id="defaultUrlHelp" class="form-text">
+          The URL used if no specific rule matches the request.
+        </div>
+      </form>
+    </div>
+  </div>
+
+{% else %}
+  {# Fallback message if the 'link' object is not available #}
+  <div class="alert alert-warning" role="alert">
+    Could not load link data.
+  </div>
+{% endif %}
+
+{# --- JavaScript for Handling Form Response --- #}
+{# This script handles the success/error feedback for the default URL form submission. #}
 <script>
-  (function () {
-    // Używamy IIFE, aby uniknąć konfliktu zmiennych, gdy ten partial jest ładowany wielokrotnie
-    const formElement = document.getElementById("default-url-form");
-    // Czasami ID messageArea może nie być unikalne, jeśli partial jest renderowany bez przeładowania
-    // Bezpieczniej jest znaleźć messageArea względem formularza
-    const messageArea = formElement ? formElement.previousElementSibling : null; // Znajdź poprzedni element (div message area)
+  (function() {
+    // Use an IIFE (Immediately Invoked Function Expression) to create a local scope.
+    // This prevents variable collisions if this partial is loaded multiple times
+    // into the same page via HTMX without a full page refresh.
 
+    // Find the specific form and message area within this instance of the partial.
+    const formElement = document.getElementById("default-url-form");
+    // It's safer to find the message area relative to the form, in case IDs become non-unique.
+    const messageArea = formElement ? formElement.previousElementSibling : null; // Assumes message div is immediately before form
+
+    // Exit if the form or message area elements are not found in this partial instance.
     if (!formElement) {
-      // Jeśli formularz nie istnieje (np. w przypadku błędu ładowania linku), nie rób nic
-      // console.log("Default URL form not found in this partial instance.");
+      // console.debug("Default URL form not found in this partial instance.");
       return;
     }
     if (!messageArea || messageArea.id !== "default-url-message-area") {
-      console.error(
-        "Could not find default URL message area relative to the form."
-      );
+      console.error("Could not find the message area (#default-url-message-area) relative to the default URL form.");
       return;
     }
 
-    console.log("Attaching afterRequest listener to default URL form.");
+    // console.debug("Attaching htmx:afterRequest listener to default URL form.");
 
-    // Listener dla odpowiedzi HTMX z TEGO formularza
-    formElement.addEventListener("htmx:afterRequest", function (evt) {
-      // Upewnij się, że event pochodzi DOKŁADNIE z tego formularza
+    // Listen for the 'htmx:afterRequest' event specifically triggered by this form.
+    formElement.addEventListener("htmx:afterRequest", function(evt) {
+      // Ensure the event originated directly from this form element, not a child or unrelated element.
       if (evt.target !== formElement) {
         return;
       }
 
-      console.log("Received response for default URL form.");
-      messageArea.innerHTML = ""; // Zawsze czyść poprzednie komunikaty
+      // console.debug("Received response for default URL form submission.");
+      messageArea.innerHTML = ""; // Clear any previous messages in the area.
 
-      const xhr = evt.detail.xhr;
+      const xhr = evt.detail.xhr; // Get the XMLHttpRequest object for details.
 
       if (evt.detail.successful) {
-        // Sprawdza status 2xx
-        console.log("Default URL update successful.");
-        // Sukces - pokaż komunikat o sukcesie
+        // --- Handle Success (2xx status code) ---
+        // console.debug("Default URL update successful.");
+        // Display a Bootstrap success alert.
         messageArea.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert">
-                                        Domyślny URL zapisany pomyślnie.
+                                        Default URL saved successfully.
                                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                                       </div>`;
-        // Opcjonalnie: Zaktualizuj wartość pola input na podstawie odpowiedzi
+
+        // OPTIONAL: Update the input field value based on the successful response data.
+        // This keeps the form input consistent with the saved state without a full reload.
         try {
-          const responseData = JSON.parse(xhr.responseText);
-          const inputField = formElement.querySelector("#default_url"); // Znajdź input w formularzu
-          if (inputField && "default_url" in responseData) {
-            // Sprawdź czy klucz istnieje
-            inputField.value = responseData.default_url || ""; // Ustaw na pusty jeśli null/brak
+          const responseData = JSON.parse(xhr.responseText); // Parse the JSON response from the server.
+          const inputField = formElement.querySelector("#default_url"); // Find the input within this form.
+          if (inputField && "default_url" in responseData) { // Check if the key exists in the response.
+            inputField.value = responseData.default_url || ""; // Update input value, use empty string if null/undefined.
           }
         } catch (e) {
-          console.error("Failed to update input field value after PATCH:", e);
+          console.error("Failed to parse response or update input field value after successful PATCH:", e);
         }
+
       } else {
-        // Błąd - pokaż komunikat o błędzie
-        console.error("Default URL update failed.", evt.detail);
-        let userFriendlyMessage = "Wystąpił nieznany błąd podczas zapisu.";
+        // --- Handle Failure (non-2xx status code) ---
+        console.error("Default URL update failed. Status:", xhr.status, "Response:", xhr.responseText);
+        let userFriendlyMessage = "An unknown error occurred while saving."; // Default error message.
+
+        // Try to parse the error response from the server for more specific details.
         try {
           const errorResponse = JSON.parse(xhr.responseText);
-          if (
-            xhr.status === 422 &&
-            errorResponse.detail &&
-            Array.isArray(errorResponse.detail)
-          ) {
-            userFriendlyMessage = "Błąd walidacji:<ul>";
-            errorResponse.detail.forEach((err) => {
-              const fieldName =
-                err.loc && err.loc.length > 1 ? err.loc[1] : "dane";
-              const fieldLabel =
-                fieldName === "default_url" ? "Domyślny URL" : fieldName;
-              const msg = err.msg || "Nieprawidłowa wartość.";
-              userFriendlyMessage += `<li>Pole '${fieldLabel}': ${msg}</li>`;
+
+          // Handle FastAPI/Pydantic validation errors (typically 422 status).
+          if (xhr.status === 422 && errorResponse.detail && Array.isArray(errorResponse.detail)) {
+            userFriendlyMessage = "Validation Error:<ul>";
+            // Format validation errors into a list.
+            errorResponse.detail.forEach(err => {
+              // Attempt to extract a user-friendly field name.
+              const fieldName = err.loc && err.loc.length > 1 ? err.loc[1] : "input";
+              const fieldLabel = fieldName === 'default_url' ? 'Default URL' : fieldName;
+              const msg = err.msg || "Invalid value.";
+              userFriendlyMessage += `<li>Field '${fieldLabel}': ${msg}</li>`;
             });
             userFriendlyMessage += "</ul>";
-          } else if (
-            errorResponse.detail &&
-            typeof errorResponse.detail === "string"
-          ) {
+          }
+          // Handle other errors where the detail is a simple string.
+          else if (errorResponse.detail && typeof errorResponse.detail === 'string') {
             userFriendlyMessage = errorResponse.detail;
-          } else {
-            userFriendlyMessage = `Błąd serwera (status: ${xhr.status}).`;
+          }
+          // Fallback if parsing succeeded but format is unexpected.
+          else {
+             userFriendlyMessage = `Server error (status: ${xhr.status}). Please try again.`;
           }
         } catch (e) {
-          userFriendlyMessage = `Błąd serwera (status: ${xhr.status}).`;
+          // Fallback if parsing the error response fails.
+          userFriendlyMessage = `Server error (status: ${xhr.status}). Could not parse error details.`;
         }
+
+        // Display a Bootstrap danger alert with the constructed error message.
         messageArea.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">
                                         ${userFriendlyMessage}
                                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                                       </div>`;
       }
     });
-  })(); // Wywołaj IIFE
+
+  })(); // Immediately invoke the IIFE to set up the listener.
 </script>

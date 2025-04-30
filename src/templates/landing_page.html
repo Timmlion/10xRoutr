@@ -1,35 +1,57 @@
-{% extends "base.html" %} {% block title %}routr - Inteligentne linki dla Twoich
-kampanii{% endblock %} {% block header %}
-<!-- Publiczny link do logowania -->
-<div class="top-right-link">
+{# src/templates/landing_page.html #} {% extends "base.html" %} {# Inherits the
+base HTML structure, styles, and scripts from base.html #} {# --- Page Title
+Block --- #} {# Overrides the 'title' block in base.html to set a specific title
+for this page. #} {% block title %}routr - Smart links for your campaigns{%
+endblock %} {# --- Header Block --- #} {# This block can be used to insert
+elements at the top, potentially overriding or adding to base.html's header
+structure. In this case, it's adding public login/register links. #} {% block
+header %} {# Container for top-right aligned links (simple absolute positioning
+for MVP) #}
+<div style="position: absolute; top: 10px; right: 15px; z-index: 1031">
+  {# Ensure it's above potential fixed navbar #} {# Link to the login page #}
   <a href="{{ url_for('render_login_page') }}" class="btn btn-outline-primary"
-    >Zaloguj się</a
+    >Log In</a
   >
-  <!-- Opcjonalnie: Link do rejestracji -->
-  {#
+  {# Optional link to the registration page (currently commented out) #} {#
   <a href="{{ url_for('render_register_page') }}" class="btn btn-primary ms-2"
-    >Zarejestruj się</a
+    >Register</a
   >
   #}
 </div>
-{% endblock %} {% block content %}
-<div class="center-container text-center">
-  <h1 class="display-1 fw-bold">routr</h1>
-  <p class="lead mt-3 mb-4">
-    Inteligentne linki dla Twoich kampanii marketingowych.
-  </p>
-  <p>
-    <a
-      href="{{ url_for('render_register_page') }}"
-      class="btn btn-primary btn-lg"
-      >Rozpocznij teraz</a
-    >
-    {# Alternatywnie, jeśli chcemy tylko logowanie na LP #} {#
-    <a href="{{ url_for('render_login_page') }}" class="btn btn-primary btn-lg"
-      >Zaloguj się</a
-    >
-    #}
-  </p>
+{% endblock %} {# --- Main Content Block --- #} {# Overrides the 'content' block
+in base.html with the landing page's main content. #} {% block content %} {# Use
+Bootstrap Flexbox utilities to center the content vertically and horizontally
+within the available main area. 'min-vh-100' attempts to make the container fill
+the viewport height. 'd-flex', 'justify-content-center', 'align-items-center'
+perform the centering. #}
+<div
+  class="container d-flex justify-content-center align-items-center"
+  style="min-height: calc(100vh - 56px - 56px - 1.5rem - 3rem)"
+>
+  {# Adjust min-height considering header/footer/margins #}
+  <div class="text-center">
+    {# Centers the text within the div #} {# Main heading - Application Name #}
+    <h1 class="display-1 fw-bold">routr</h1>
+    {# Subheading/Tagline #}
+    <p class="lead mt-3 mb-4">Smart links for your marketing campaigns.</p>
+    {# Call to Action (CTA) Button #}
+    <p>
+      <a
+        href="{{ url_for('render_register_page') }}"
+        class="btn btn-primary btn-lg"
+        >Get Started Now</a
+      >
+      {# Alternative CTA linking to login page (currently commented out) #} {#
+      <a
+        href="{{ url_for('render_login_page') }}"
+        class="btn btn-primary btn-lg"
+        >Log In</a
+      >
+      #}
+    </p>
+  </div>
 </div>
-{% endblock %} {% block scripts %} {# Ewentualne specyficzne skrypty dla tej
-strony #} {% endblock %}
+{% endblock %} {# --- Page-Specific Scripts Block --- #} {# Overrides the
+'scripts' block in base.html. Use this to add JavaScript specific to this
+landing page. #} {% block scripts %} {# No landing-page specific scripts needed
+in this example. #} {% endblock %}

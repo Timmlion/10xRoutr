@@ -1,214 +1,304 @@
-<base><!DOCTYPE html>
+<!DOCTYPE html>
+{# Base template using Jinja2 templating engine #}
 <html lang="pl">
+  {# Set language to Polish #}
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {# --- Page Title Block --- #} {# Allows child templates to override the
+    page title. Defaults to 'routr'. #}
     <title>{% block title %}routr{% endblock %}</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
+    {# --- CSS Includes --- #} {# Flatpickr CSS for date/time pickers #}
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"
+    />
+    {# Bootstrap 5 CSS #}
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
       rel="stylesheet"
       integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
       crossorigin="anonymous"
     />
+    {# Bootstrap Icons CSS #}
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
     />
-    {# Ewentualny własny CSS #}
-    {# <link href="{{ url_for('static', path='/css/style.css') }}" rel="stylesheet"> #}
+    {# Optional custom CSS (currently commented out) #} {#
+    <link
+      href="{{ url_for('static', path='/css/style.css') }}"
+      rel="stylesheet"
+    />
+    #} {# --- Custom Inline Styles --- #}
     <style>
       body {
-        padding-top: 56px; /* Adjust if navbar height changes */
+        /* Add padding to the top of the body to prevent content from being hidden behind the fixed navbar. */
+        padding-top: 56px; /* Adjust this value if the navbar height changes */
       }
       .footer {
-        /* Usunięto fixed, aby stopka była na dole treści, a nie okna */
+        /* Basic footer styling - ensures consistent height and vertical text alignment. */
+        /* Note: 'fixed-bottom' class was removed; 'mt-auto' on footer and 'min-vh-100' on body achieve sticky footer effect. */
         width: 100%;
-        height: 56px; /* Stała wysokość stopki */
-        line-height: 56px; /* Wyśrodkowanie tekstu w pionie */
+        height: 56px; /* Footer height */
+        line-height: 56px; /* Vertically center text in the footer */
       }
-       /* Styl dla wskaźnika ładowania HTMX */
-       .htmx-indicator{
-           display:none;
-       }
-       .htmx-request .htmx-indicator{
-           display:inline-block;
-       }
-       .htmx-request.htmx-indicator{
-           display:inline-block;
-       }
-       /* Ukrywanie domyślnego tekstu, gdy wskaźnik jest widoczny */
-       .htmx-request .no-indicator {
-            display: none;
-       }
-       /* Dodatkowy styl dla lepszego odstępu stopki */
-       main {
-            padding-bottom: 70px; /* Zapewnia, że treść nie chowa się pod stopką */
-       }
+      /* --- HTMX Loading Indicator Styles --- */
+      /* Hide the indicator element by default. */
+      .htmx-indicator {
+        display: none;
+      }
+      /* Display the indicator element when an HTMX request is in progress
+          (applied to the element specified by hx-indicator or its triggering element). */
+      .htmx-request .htmx-indicator {
+        display: inline-block;
+      }
+      /* Also handle the case where the indicator itself has the htmx-request class. */
+      .htmx-request.htmx-indicator {
+        display: inline-block;
+      }
+      /* Optionally hide other content while the indicator is shown (e.g., hide button text). */
+      .htmx-request .no-indicator {
+        display: none;
+      }
+      /* --- Layout Adjustments --- */
+      main {
+        /* Ensure main content area has enough bottom padding so content isn't obscured by the footer. */
+        padding-bottom: 70px;
+      }
     </style>
   </head>
+  {# --- Body --- #} {# Uses Flexbox utilities to ensure the footer sticks to
+  the bottom, even on short pages. #}
   <body class="d-flex flex-column min-vh-100">
-    {# Skrypt sprawdzający token PRZED renderowaniem reszty #}
+    {# --- Client-Side Authentication Check --- #} {# This script runs
+    immediately to check for an auth token BEFORE rendering potentially
+    protected content. #}
     <script>
-        (function() {
-            // Pomijaj sprawdzanie na stronach publicznych
-            const publicPaths = ['/app/login', '/app/register', '/app/'];
-            const currentPath = window.location.pathname;
+      (function () {
+        // Define routes that DO NOT require authentication.
+        const publicPaths = ["/app/login", "/app/register", "/app/"]; // Root/landing page is public too
+        const currentPath = window.location.pathname; // Get the current browser path.
 
-            // Sprawdź, czy bieżąca ścieżka NIE zaczyna się od żadnej publicznej ścieżki
-            // (lepsze niż ścisłe porównanie, jeśli mamy np. /app/links/123)
-             let isPublic = false;
-             for (const path of publicPaths) {
-                 // Ścisłe porównanie dla /app/ jest OK, bo to landing
-                 if (path === '/app/' && currentPath === path) {
-                     isPublic = true;
-                     break;
-                 }
-                 // Dla login/register sprawdzamy, czy ścieżka zaczyna się od nich
-                 else if (path !== '/app/' && currentPath.startsWith(path)) {
-                     isPublic = true;
-                     break;
-                 }
-             }
+        // Determine if the current page is considered public.
+        let isPublic = false;
+        for (const path of publicPaths) {
+          // Check if the current path exactly matches the root/landing page.
+          if (path === "/app/" && currentPath === path) {
+            isPublic = true;
+            break;
+          }
+          // Check if the current path *starts with* other public paths (like /login or /register).
+          else if (path !== "/app/" && currentPath.startsWith(path)) {
+            isPublic = true;
+            break;
+          }
+        }
 
-            // Jeśli ścieżka nie jest publiczna, sprawdź token
-            if (!isPublic) {
-                const token = sessionStorage.getItem('routr_access_token');
-                if (!token) {
-                    console.log('No token found for protected route, redirecting to login:', currentPath);
-                    // Przekieruj na stronę logowania
-                    // Użyj window.location.replace, aby nie dodawać strony do historii
-                    window.location.replace("{{ url_for('render_login_page') }}");
-                } else {
-                    console.log('Token found, proceeding to load protected page:', currentPath);
-                }
-            } else {
-                 console.log('Public page or root, skipping token check:', currentPath);
-            }
-        })();
+        // If the page is NOT public, check for the presence of the authentication token.
+        if (!isPublic) {
+          // Retrieve the token from session storage (adjust key if stored differently).
+          const token = sessionStorage.getItem("routr_access_token");
+          if (!token) {
+            // If no token is found on a protected route...
+            console.log(
+              "No token found for protected route, redirecting to login:",
+              currentPath
+            ); // MVP Log
+            // Redirect the user to the login page immediately.
+            // `window.location.replace` prevents adding the blocked page to browser history.
+            window.location.replace("{{ url_for('render_login_page') }}"); // Use Jinja2's url_for to get the correct login URL.
+          } else {
+            // Token found, allow page load to proceed.
+            console.log(
+              "Token found, proceeding to load protected page:",
+              currentPath
+            ); // MVP Log
+          }
+        } else {
+          // Skip token check for public pages.
+          console.log(
+            "Public page or root, skipping token check:",
+            currentPath
+          ); // MVP Log
+        }
+      })();
     </script>
-    {# Koniec skryptu sprawdzającego token #}
-
+    {# --- End Authentication Check --- #} {# --- Header with Navbar Placeholder
+    --- #} {# The navbar is fixed to the top of the viewport. #}
     <header class="fixed-top">
-      {# Navbar jest dołączany w szablonach dziedziczących, np. links_list.html #}
-      {% block navbar %}
-      {% endblock %}
+      {# Child templates can insert a navbar component here using {% block
+      navbar %} #} {% block navbar %} {# Default is empty; navbar is expected to
+      be included in child templates needing it. #} {% endblock %}
     </header>
 
-    <main role="main" class="container-fluid flex-grow-1 mt-4 mb-5"> {# Zwiększony margines dolny #}
-      <!-- Miejsce na globalne komunikaty/alerty -->
-      <div id="global-message-area" class="container"> {# Ogranicz szerokość alertów #}
-          <div class="row">
-              <div class="col-md-10 col-lg-8 mx-auto"> {# Wyśrodkuj i ogranicz #}
-                  {# Alerty będą wstawiane tutaj przez JS #}
-              </div>
+    {# --- Main Content Area --- #} {# Uses Bootstrap container-fluid for full
+    width. 'flex-grow-1' allows this section to expand and fill available
+    vertical space. Margins provide spacing from header and footer. #}
+    <main role="main" class="container-fluid flex-grow-1 mt-4 mb-5">
+      <!-- Area for displaying global messages/alerts (e.g., from HTMX errors) -->
+      <div id="global-message-area" class="container">
+        {# Use 'container' to limit alert width #}
+        <div class="row">
+          {# Center the alert area and limit its width on larger screens #}
+          <div class="col-md-10 col-lg-8 mx-auto">
+            {# Alerts will be dynamically inserted here by JavaScript #}
           </div>
+        </div>
       </div>
 
-      {% block content %}{% endblock %}
+      {# --- Main Content Block --- #} {# Child templates insert their primary
+      content here. #} {% block content %}{% endblock %}
     </main>
 
-    <footer class="footer mt-auto py-3 bg-light"> {# mt-auto pcha stopkę w dół #}
+    {# --- Footer --- #} {# 'mt-auto' pushes the footer down in the flex
+    container. 'py-3' adds vertical padding. #}
+    <footer class="footer mt-auto py-3 bg-light">
       <div class="container text-center">
-        <span class="text-muted"
-          >© routr {% block year %}{{ now().year if now else '' }}{% endblock %}</span
-        >
+        <span class="text-muted">
+          {# Copyright text #} © routr {% block year %}{{ now().year if now else
+          '' }}{% endblock %} {# Dynamically insert year if 'now' function
+          available #}
+        </span>
       </div>
     </footer>
+
+    {# --- JavaScript Includes --- #} {# Flatpickr JS for date/time pickers #}
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    {# Bootstrap 5 Bundle (includes Popper.js) #}
     <script
       src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
       integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
       crossorigin="anonymous"
     ></script>
-    {# Usunięto integrity dla HTMX na czas developmentu #}
+    {# HTMX library #} {# Note: Consider adding integrity check back for
+    production. #}
     <script
       src="https://unpkg.com/htmx.org@1.9.12"
       crossorigin="anonymous"
     ></script>
 
-    {# --- Skrypty Globalne --- #}
+    {# --- Global Application Scripts --- #}
     <script>
-      // --- Obsługa dodawania tokena do żądań HTMX API ---
+      // --- HTMX Request Configuration: Inject Auth Token ---
+      // Listen for the 'htmx:configRequest' event, which fires before HTMX sends a request.
       document.body.addEventListener("htmx:configRequest", function (evt) {
-        const token = sessionStorage.getItem("routr_access_token");
+        const token = sessionStorage.getItem("routr_access_token"); // Get token from storage.
+        // Check if a token exists and the request is targeting an API endpoint.
         if (token && evt.detail.path.startsWith("/api/")) {
+          // Add the Authorization header to the request.
           evt.detail.headers["Authorization"] = "Bearer " + token;
-          console.log(`[HTMX Request] Adding token to ${evt.detail.path}`);
-        } else if (
+          console.log(`[HTMX Request] Adding token to ${evt.detail.path}`); // MVP Log
+        }
+        // If no token exists for a protected API call (excluding auth endpoints)...
+        else if (
           !token &&
           evt.detail.path.startsWith("/api/") &&
-          !evt.detail.path.includes("/auth/")
+          !evt.detail.path.includes("/auth/") // Allow requests to /api/v1/auth/... without a token
         ) {
+          // Prevent the HTMX request and redirect to login.
           console.warn(
             `[HTMX Request] No token found for protected API call: ${evt.detail.path}. Redirecting to login.`
-          );
-          evt.preventDefault();
-          window.location.href = "{{ url_for('render_login_page') }}";
+          ); // MVP Log
+          evt.preventDefault(); // Stop HTMX from sending the request.
+          window.location.href = "{{ url_for('render_login_page') }}"; // Redirect.
         }
       });
 
-      // --- Globalna obsługa błędów odpowiedzi HTMX ---
+      // --- HTMX Global Response Error Handling ---
+      // Listen for the 'htmx:responseError' event, which fires when HTMX receives a non-2xx response.
       document.body.addEventListener("htmx:responseError", function (evt) {
-        console.error("HTMX Response Error Event:", evt.detail);
+        console.error("HTMX Response Error Event:", evt.detail); // Log the full event detail for debugging.
 
+        // Handle 401 (Unauthorized) or 403 (Forbidden) errors specifically.
         if (evt.detail.xhr.status === 401 || evt.detail.xhr.status === 403) {
+          // Assume the token is invalid or expired, or permissions are insufficient.
           console.warn(
             `[HTMX Response Error] Received ${evt.detail.xhr.status}. Redirecting to login.`
-          );
-          sessionStorage.removeItem("routr_access_token");
-          window.location.replace("{{ url_for('render_login_page') }}"); // Użyj replace
+          ); // MVP Log
+          sessionStorage.removeItem("routr_access_token"); // Clear the potentially invalid token.
+          window.location.replace("{{ url_for('render_login_page') }}"); // Use replace to avoid history entry.
         } else {
-          const messageArea = document.getElementById("global-message-area").querySelector('.col-lg-8'); // Celuj w wewnętrzny div
+          // Handle other errors (e.g., 400, 404, 409, 422, 500).
+          const messageArea = document
+            .getElementById("global-message-area")
+            ?.querySelector(".col-lg-8"); // Target the inner div for content
           if (messageArea) {
-            let userFriendlyMessage = "Wystąpił nieoczekiwany błąd.";
+            let userFriendlyMessage = "An unexpected error occurred."; // Default message.
 
+            // Try to parse the response body as JSON to get detailed error info.
             try {
               const errorResponse = JSON.parse(evt.detail.xhr.responseText);
-              console.log("Parsed Error Response:", errorResponse);
+              console.log("Parsed Error Response:", errorResponse); // Log parsed error
 
-              if (evt.detail.xhr.status === 422 && errorResponse.detail && Array.isArray(errorResponse.detail)) {
-                userFriendlyMessage = "Błąd walidacji danych:<ul>";
+              // Handle FastAPI/Pydantic validation errors (status 422).
+              if (
+                evt.detail.xhr.status === 422 &&
+                errorResponse.detail &&
+                Array.isArray(errorResponse.detail)
+              ) {
+                userFriendlyMessage = "Validation Error:<ul>";
                 errorResponse.detail.forEach((err) => {
-                  const field = err.loc && err.loc.length > 1 ? `Pole '${err.loc.join(".")}'` : "Błąd";
-                  const msg = err.msg || "Nieprawidłowa wartość.";
+                  // Attempt to format a helpful message from the error detail structure.
+                  const field =
+                    err.loc && err.loc.length > 1
+                      ? `Field '${err.loc.join(".")}'`
+                      : "Input";
+                  const msg = err.msg || "Invalid value.";
                   userFriendlyMessage += `<li>${field}: ${msg}</li>`;
                 });
                 userFriendlyMessage += "</ul>";
-              } else if (errorResponse.detail && typeof errorResponse.detail === "string") {
+              }
+              // Handle errors where the server provided a simple 'detail' string.
+              else if (
+                errorResponse.detail &&
+                typeof errorResponse.detail === "string"
+              ) {
                 userFriendlyMessage = errorResponse.detail;
-              } else if (errorResponse.message) { // Dodatkowe sprawdzenie dla ogólnych błędów
-                  userFriendlyMessage = `Błąd serwera: ${errorResponse.message} (status: ${evt.detail.xhr.status})`;
-              } else {
-                userFriendlyMessage = `Błąd serwera (status: ${evt.detail.xhr.status}). Spróbuj ponownie później.`;
+              }
+              // Handle Supabase/PostgREST errors that might use 'message'.
+              else if (errorResponse.message) {
+                userFriendlyMessage = `Server error: ${errorResponse.message} (status: ${evt.detail.xhr.status})`;
+              }
+              // Fallback for other errors or unexpected JSON structures.
+              else {
+                userFriendlyMessage = `Server error (status: ${evt.detail.xhr.status}). Please try again later.`;
               }
             } catch (e) {
-              console.error("Failed to parse error response or invalid format:", e);
-              userFriendlyMessage = `Błąd serwera (status: ${evt.detail.xhr.status}). Brak szczegółów błędu.`;
+              // Fallback if the response body wasn't valid JSON.
+              console.error(
+                "Failed to parse error response or invalid format:",
+                e
+              );
+              userFriendlyMessage = `Server error (status: ${evt.detail.xhr.status}). No error details available.`;
             }
 
-            // Dodaj nowy alert, zamiast nadpisywać całe messageArea
-            const alertDiv = document.createElement('div');
-            alertDiv.className = "alert alert-danger alert-dismissible fade show";
-            alertDiv.setAttribute('role', 'alert');
+            // Create and display the error message using a Bootstrap alert.
+            const alertDiv = document.createElement("div");
+            alertDiv.className =
+              "alert alert-danger alert-dismissible fade show"; // Use dismissible alert
+            alertDiv.setAttribute("role", "alert");
             alertDiv.innerHTML = `
                 ${userFriendlyMessage}
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             `;
-            // Wyczyść poprzednie alerty przed dodaniem nowego
+            // Clear any previous alerts in the global area before adding the new one.
             while (messageArea.firstChild) {
-                messageArea.removeChild(messageArea.firstChild);
+              messageArea.removeChild(messageArea.firstChild);
             }
-            messageArea.appendChild(alertDiv);
-
+            messageArea.appendChild(alertDiv); // Add the new alert.
           } else {
-            console.error("Global message area's inner div not found in DOM.");
+            // Log an error if the designated message area couldn't be found in the DOM.
+            console.error(
+              "Global message area's inner div (#global-message-area .col-lg-8) not found in DOM."
+            );
           }
         }
       });
     </script>
-     {# Dodatkowy blok skryptów dla stron dziedziczących #}
-    {% block scripts %}{% endblock %}
+
+    {# --- Page-Specific Scripts Block --- #} {# Allows child templates to
+    include additional JavaScript. #} {% block scripts %}{% endblock %}
   </body>
 </html>
-</base>

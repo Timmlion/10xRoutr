@@ -1,5 +1,14 @@
-{# Wyświetla komunikat błędu w miejscu statystyk #}
+{# src/templates/partials/stats_error.html #} {# This partial template is
+designed to display an error message when loading link statistics fails. It's
+likely used as a fallback content swapped in by HTMX or rendered directly if an
+error occurs during the initial request for statistics data. Expected Jinja2
+context variables: - error_message (optional): A specific error message passed
+from the server. #} {# Use Bootstrap's alert component, styled as 'danger' for
+errors. #}
 <div class="alert alert-danger text-center" role="alert">
-  <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error_message |
-  default('Wystąpił błąd podczas ładowania statystyk.') }}
+  {# Include a relevant Bootstrap Icon for visual feedback. #}
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  {# Display the provided 'error_message' from the context. Use the 'default'
+  filter to show a generic message if 'error_message' is not provided. #} {{
+  error_message | default('An error occurred while loading statistics.') }}
 </div>

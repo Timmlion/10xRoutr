@@ -1,62 +1,79 @@
-{# Ten plik zawiera tylko wiersze
-<tr>
-  dla tabeli linków #} {% if links %} {% for link in links %}
-</tr>
+{# src/templates/partials/link_rows.html #}
+{#
+  This partial template renders the table rows (<tr>) for the list of links.
+  It expects a list named 'links' in the Jinja2 context.
+  Each item in 'links' should be an object with properties like id, alias, total_clicks, etc. (LinkResponse schema).
+#}
 
-<tr>
-  <td>
-    {# TODO: Zmienić link na endpoint edycji, gdy będzie gotowy #}
-    <a href="/app/links/{{ link.id }}/edit" title="Edytuj link"
-      >{{ link.alias }}</a
-    >
-  </td>
-  <td>
-    {# Pełny URL - zakładamy, że BASE_URL jest dostępne lub go hardkodujemy dla
-    MVP #} {# Lepiej byłoby przekazać BASE_URL z konfiguracji przez kontekst
-    Jinja #}
-    <a href="http://127.0.0.1:8000/{{ link.alias }}" target="_blank"
-      >http://127.0.0.1:8000/{{ link.alias }}</a
-    >
-  </td>
-  <td class="text-center">{{ link.total_clicks }}</td>
-  <td class="text-end">
-    {# Przycisk Kopiuj URL #}
-    <button
-      class="btn btn-sm btn-outline-secondary copy-url-button me-1"
-      data-url="http://127.0.0.1:8000/{{ link.alias }}"
-      title="Kopiuj URL"
-    >
-      <i class="bi bi-clipboard"></i> {# Zakładamy użycie Bootstrap Icons #}
-    </button>
+{% if links %} {# Check if the 'links' list is not empty #}
+  {% for link in links %} {# Iterate over each link object in the list #}
+  <tr>
+    {# Alias Column: Displays the link's alias and links to its edit page. #}
+    <td>
+      <a href="/app/links/{{ link.id }}/edit" title="Edit link: {{ link.alias }}">
+        {{ link.alias }}
+      </a>
+    </td>
 
-    {# Przycisk Edytuj #}
-    <a
-      href="/app/links/{{ link.id }}/edit"
-      class="btn btn-sm btn-outline-primary me-1"
-      title="Edytuj"
-    >
-      <i class="bi bi-pencil-square"></i>
-    </a>
+    {# Full URL Column: Displays the clickable full URL for the link. #}
+    <td>
+      {# NOTE: Ideally, the base URL (http://127.0.0.1:8000/) should not be hardcoded here.
+               It should be constructed using `request.base_url` passed in the Jinja2 context
+               from the FastAPI endpoint, similar to how it's done in link_edit_header.html.
+               Example: <a href="{{ request.base_url }}{{ link.alias }}" ...> #}
+      <a href="http://127.0.0.1:8000/{{ link.alias }}" target="_blank" title="Open link in new tab">
+        http://127.0.0.1:8000/{{ link.alias }}
+      </a>
+    </td>
 
-    {# Przycisk Usuń (z obsługą modala) #}
-    <button
-      class="btn btn-sm btn-outline-danger delete-link-button"
-      data-bs-toggle="modal"
-      data-bs-target="#confirmDeleteModal"
-      hx-delete="/api/v1/links/{{ link.id }}"
-      hx-target="closest tr"
-      hx-swap="outerHTML"
-      title="Usuń"
-    >
-      <i class="bi bi-trash"></i>
-    </button>
-  </td>
-</tr>
-{% endfor %} {% else %}
-<tr>
-  <td colspan="4" class="text-center text-muted">
-    Nie utworzyłeś jeszcze żadnych linków.
-  </td>
-</tr>
-{% endif %} {# TODO: Dodać wiersz(e) dla kontrolek paginacji, jeśli
-zaimplementowano #}
+    {# Clicks Column: Displays the total number of clicks recorded for this link. #}
+    <td class="text-center">{{ link.total_clicks }}</td>
+
+    {# Actions Column: Contains buttons for common link operations. #}
+    <td class="text-end"> {# Aligns buttons to the right #}
+      {# Copy URL Button: Copies the link's full URL to the clipboard. #}
+      {# Assumes a JavaScript handler is attached to elements with class 'copy-url-button'.
+         NOTE: Like the link column, this should ideally use `request.base_url`. #}
+      <button
+        class="btn btn-sm btn-outline-secondary copy-url-button me-1"
+        data-url="http://127.0.0.1:8000/{{ link.alias }}" {# URL to be copied #}
+        title="Copy URL"
+      >
+        <i class="bi bi-clipboard"></i> {# Bootstrap Icon for copy #}
+      </button>
+
+      {# Edit Button: Navigates to the link's edit page. #}
+      <a
+        href="/app/links/{{ link.id }}/edit"
+        class="btn btn-sm btn-outline-primary me-1"
+        title="Edit Link"
+      >
+        <i class="bi bi-pencil-square"></i> {# Bootstrap Icon for edit #}
+      </a>
+
+      {# Delete Button: Triggers a confirmation modal and then sends a DELETE request via HTMX. #}
+      <button
+        class="btn btn-sm btn-outline-danger delete-link-button"
+        data-bs-toggle="modal" {# Bootstrap attribute to trigger a modal #}
+        data-bs-target="#confirmDeleteModal" {# ID of the Bootstrap modal to target #}
+        hx-delete="/api/v1/links/{{ link.id }}" {# HTMX: Sends DELETE request to this URL on confirmation (modal interaction needed) #}
+        hx-target="closest tr" {# HTMX: Targets the closest ancestor table row (this <tr>) #}
+        hx-swap="outerHTML" {# HTMX: Replaces the entire target (the <tr>) with the response. For DELETE (204 No Content), this effectively removes the row. #}
+        title="Delete Link"
+      >
+        <i class="bi bi-trash"></i> {# Bootstrap Icon for delete #}
+      </button>
+    </td>
+  </tr>
+  {% endfor %}
+{% else %}
+  {# Empty State: Displayed if the 'links' list is empty or not provided. #}
+  <tr>
+    <td colspan="4" class="text-center text-muted fst-italic py-3">
+      You haven't created any links yet.
+    </td>
+  </tr>
+{% endif %}
+
+{# TODO: Add table rows (or integrate with a separate partial) for pagination controls if implemented.
+         This partial only renders the data rows themselves. #}

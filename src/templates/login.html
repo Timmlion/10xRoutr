@@ -1,123 +1,131 @@
-{% extends "base.html" %} {% block title %}Logowanie - routr{% endblock %} {%
-block header %}
-<!-- Opcjonalny link do rejestracji w rogu -->
-<div class="top-right-link">
-  <a
-    href="{{ url_for('render_register_page') }}"
-    class="btn btn-outline-secondary"
-    >Zarejestruj się</a
-  >
+{# src/templates/login.html #}
+
+{% extends "base.html" %} {# Inherit base structure, styles, scripts #}
+
+{# --- Page Title Block --- #}
+{% block title %}Log In - routr{% endblock %}
+
+{# --- Header Block --- #}
+{# Optionally add a link to the registration page in the top right corner #}
+{% block header %}
+<div style="position: absolute; top: 10px; right: 15px; z-index: 1031;"> {# Simple positioning for MVP #}
+  <a href="{{ url_for('render_register_page') }}" class="btn btn-outline-secondary">Register</a>
 </div>
-{% endblock %} {% block content %}
-<div class="container mt-5">
-  <div class="row justify-content-center">
-    <div class="col-md-6 col-lg-4">
+{% endblock %}
+
+{# --- Main Content Block --- #}
+{% block content %}
+<div class="container mt-5"> {# Main container with top margin #}
+  <div class="row justify-content-center"> {# Center the content horizontally #}
+    <div class="col-md-6 col-lg-4"> {# Control the width of the login card #}
+
+      {# Bootstrap Card component for visual structure #}
       <div class="card shadow-sm">
         <div class="card-body">
-          <h2 class="card-title text-center mb-4">Zaloguj się</h2>
+          <h2 class="card-title text-center mb-4">Log In</h2>
 
-          <!-- Miejsce na komunikaty o błędach -->
-          <div
-            id="error-message"
-            class="alert alert-danger d-none"
-            role="alert"
-          >
-            <!-- Błędy będą tutaj wstawiane przez JS -->
+          {# --- Error Message Area --- #}
+          {# This div is initially hidden and will display login errors dynamically via JavaScript. #}
+          <div id="error-message" class="alert alert-danger d-none" role="alert">
+            {# Error content will be inserted here by the script below. #}
           </div>
 
-          <form
-            id="login-form"
-            hx-post="/api/v1/auth/login"
-            hx-trigger="submit"
-            hx-swap="none"
-          >
-            {# Nie chcemy domyślnej podmiany HTML przez HTMX #}
-
+          {# --- Login Form --- #}
+          {# Uses HTMX to submit the form data via POST without a full page reload. #}
+          <form id="login-form"
+                hx-post="/api/v1/auth/login" {# HTMX: Target API endpoint for login #}
+                hx-trigger="submit" {# HTMX: Trigger request on form submission #}
+                hx-swap="none" {# HTMX: IMPORTANT - Do not swap any HTML content by default. JS handles success/error. #}
+                >
+            {# NOTE: The /api/v1/auth/login endpoint expects 'username' and 'password'
+                     fields due to using FastAPI's OAuth2PasswordRequestForm dependency. #}
             <div class="mb-3">
-              <label for="email" class="form-label">Adres E-mail</label>
-              {# Używamy 'username' jak wymaga OAuth2PasswordRequestForm #}
-              <input
-                type="email"
-                class="form-control"
-                id="email"
-                name="username"
-                required
-              />
+              <label for="email" class="form-label">Email Address</label>
+              {# Input field for email, **name="username"** is crucial for the backend. #}
+              <input type="email" class="form-control" id="email" name="username" required autocomplete="username">
             </div>
             <div class="mb-3">
-              <label for="password" class="form-label">Hasło</label>
-              <input
-                type="password"
-                class="form-control"
-                id="password"
-                name="password"
-                required
-              />
+              <label for="password" class="form-label">Password</label>
+              {# Input field for password. #}
+              <input type="password" class="form-control" id="password" name="password" required autocomplete="current-password">
             </div>
-            <button type="submit" class="btn btn-primary w-100">Zaloguj</button>
+            {# Submit button #}
+            <button type="submit" class="btn btn-primary w-100">Log In</button>
           </form>
-          <div class="text-center mt-3">
-            <small
-              >Nie masz konta?
-              <a href="{{ url_for('render_register_page') }}"
-                >Zarejestruj się</a
-              ></small
-            >
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-{% endblock %} {% block scripts %}
-<script>
-  document.body.addEventListener("htmx:afterOnLoad", function (evt) {
-    const form = document.getElementById("login-form");
-    // Sprawdzamy, czy event pochodzi z naszego formularza logowania
-    if (evt.target === form) {
-      const xhr = evt.detail.xhr;
-      const errorMessageDiv = document.getElementById("error-message");
 
-      // Ukrywamy poprzedni błąd na wszelki wypadek
+          {# Link to registration page for users without an account #}
+          <div class="text-center mt-3">
+            <small>Don't have an account? <a href="{{ url_for('render_register_page') }}">Register</a></small>
+          </div>
+        </div> {# End card-body #}
+      </div> {# End card #}
+
+    </div> {# End col #}
+  </div> {# End row #}
+</div> {# End container #}
+{% endblock %}
+
+{# --- Page-Specific Scripts Block --- #}
+{% block scripts %}
+<script>
+  // Add an event listener for the 'htmx:afterRequest' event.
+  // This event fires after an HTMX request completes, regardless of success or failure.
+  // Using 'afterRequest' instead of 'afterOnLoad' as the latter might imply successful content loading,
+  // which isn't happening here due to hx-swap="none".
+  document.body.addEventListener('htmx:afterRequest', function(evt) {
+    const form = document.getElementById("login-form");
+    // Ensure the event originated from *this* specific login form.
+    if (evt.target === form) {
+      const xhr = evt.detail.xhr; // Get the XMLHttpRequest object.
+      const errorMessageDiv = document.getElementById("error-message"); // Get the error message display area.
+
+      // Hide any previous error messages before processing the new response.
       errorMessageDiv.classList.add("d-none");
       errorMessageDiv.textContent = "";
 
-      if (xhr.status === 200) {
-        // Sukces - logowanie pomyślne
+      // Check if the request was successful (status code 200 OK).
+      if (evt.detail.successful) { // evt.detail.successful checks for 2xx status codes
+        // --- Handle Successful Login ---
         try {
+          // Parse the JSON response from the server.
           const response = JSON.parse(xhr.responseText);
+          // Check if the expected access token is present in the response.
           if (response.access_token) {
-            console.log("Login successful, saving token..."); // Log MVP
-            // Zapisujemy token w sessionStorage
+            console.log("Login successful, saving token..."); // MVP Log
+            // Store the access token in session storage (or local storage if persistence is needed).
             sessionStorage.setItem("routr_access_token", response.access_token);
-            // Przekierowujemy na dashboard
-            window.location.href = "/app/links"; // Zakładamy, że /app/links to dashboard
+            // Redirect the user to the main application dashboard upon successful login.
+            window.location.href = "/app/links"; // Adjust URL if dashboard is elsewhere.
           } else {
-            errorMessageDiv.textContent =
-              "Błąd odpowiedzi serwera: Brak tokenu dostępu.";
-            errorMessageDiv.classList.remove("d-none");
+            // Handle unexpected success response (200 OK but no token).
+            console.error("Login response OK but missing access token:", response); // MVP Log
+            errorMessageDiv.textContent = "Server response error: Access token missing.";
+            errorMessageDiv.classList.remove("d-none"); // Show the error message div.
           }
         } catch (e) {
-          console.error("Failed to parse login response:", e); // Log MVP
-          errorMessageDiv.textContent =
-            "Błąd przetwarzania odpowiedzi serwera.";
+          // Handle errors parsing the successful JSON response.
+          console.error("Failed to parse successful login response:", e, xhr.responseText); // MVP Log
+          errorMessageDiv.textContent = "Error processing server response.";
           errorMessageDiv.classList.remove("d-none");
         }
       } else {
-        // Błąd logowania (np. 401, 500)
-        let detailMessage = "Wystąpił nieznany błąd.";
+        // --- Handle Failed Login (non-2xx status code, e.g., 401, 500) ---
+        let detailMessage = "An unknown error occurred."; // Default error message.
         try {
+          // Try to parse the error response JSON (FastAPI often returns {"detail": "error message"}).
           const errorResponse = JSON.parse(xhr.responseText);
           if (errorResponse.detail) {
+            // Use the specific error detail message from the server.
             detailMessage = errorResponse.detail;
           }
         } catch (e) {
-          // Jeśli odpowiedź nie jest JSON lub jest pusta
-          detailMessage = `Błąd serwera (status: ${xhr.status})`;
+          // Fallback if the error response is not JSON or parsing fails.
+          detailMessage = `Server error (status: ${xhr.status})`;
         }
-        console.error(`Login failed (status ${xhr.status}): ${detailMessage}`); // Log MVP
+        console.error(`Login failed (status ${xhr.status}): ${detailMessage}`); // MVP Log
+        // Display the error message to the user.
         errorMessageDiv.textContent = detailMessage;
-        errorMessageDiv.classList.remove("d-none");
+        errorMessageDiv.classList.remove("d-none"); // Make the error message div visible.
       }
     }
   });

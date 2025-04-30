@@ -1,157 +1,178 @@
-{% extends "base.html" %} {% block title %}Rejestracja - routr{% endblock %} {%
-block header %}
-<!-- Opcjonalny link do logowania w rogu -->
-<div class="top-right-link">
-  <a href="{{ url_for('render_login_page') }}" class="btn btn-outline-secondary"
-    >Zaloguj się</a
-  >
+{# src/templates/register.html #}
+
+{% extends "base.html" %} {# Inherit base structure, styles, scripts #}
+
+{# --- Page Title Block --- #}
+{% block title %}Register - routr{% endblock %}
+
+{# --- Header Block --- #}
+{# Optionally add a link to the login page in the top right corner #}
+{% block header %}
+<div style="position: absolute; top: 10px; right: 15px; z-index: 1031;"> {# Simple positioning for MVP #}
+  <a href="{{ url_for('render_login_page') }}" class="btn btn-outline-secondary">Log In</a>
 </div>
-{% endblock %} {% block content %}
-<div class="container mt-5">
-  <div class="row justify-content-center">
-    <div class="col-md-6 col-lg-4">
+{% endblock %}
+
+{# --- Main Content Block --- #}
+{% block content %}
+<div class="container mt-5"> {# Main container with top margin #}
+  <div class="row justify-content-center"> {# Center the content horizontally #}
+    <div class="col-md-6 col-lg-4"> {# Control the width of the registration card #}
+
+      {# Bootstrap Card component #}
       <div class="card shadow-sm">
         <div class="card-body">
-          <h2 class="card-title text-center mb-4">Zarejestruj się</h2>
+          <h2 class="card-title text-center mb-4">Register</h2>
 
-          <!-- Miejsce na komunikaty o sukcesie/błędach -->
+          {# --- Message Area --- #}
+          {# This div is initially hidden and displays success or error messages via JavaScript. #}
           <div id="message-area" class="alert d-none" role="alert">
-            <!-- Komunikaty będą tutaj wstawiane przez JS -->
+            {# Message content will be inserted here by the script below. #}
           </div>
 
-          <form
-            id="register-form"
-            hx-post="/api/v1/auth/register"
-            hx-trigger="submit"
-            hx-encoding="application/json"
-            {#
-            API
-            oczekuje
-            JSON
-            #}
-            hx-swap="none"
-          >
-            {# Nie chcemy domyślnej podmiany HTML #}
+          {# --- Registration Form --- #}
+          {# Uses HTMX to submit data. Requires JSON encoding due to backend expectations. #}
+          <form id="register-form"
+                hx-post="/api/v1/auth/register" {# HTMX: Target API endpoint for registration #}
+                hx-trigger="submit" {# HTMX: Trigger request on form submission #}
+                hx-encoding="application/json" {# HTMX: **Crucial** - Specify JSON encoding for the request body #}
+                hx-swap="none" {# HTMX: Do not swap HTML content; JS handles response messages/actions #}
+                {# The hx-ext="json-form" attribute is added dynamically by the script below #}
+                >
 
+            {# Email Input Field #}
             <div class="mb-3">
-              <label for="email" class="form-label">Adres E-mail</label>
-              <input
-                type="email"
-                class="form-control"
-                id="email"
-                name="email"
-                required
-              />
+              <label for="email" class="form-label">Email Address</label>
+              <input type="email" class="form-control" id="email" name="email" required autocomplete="email">
             </div>
+
+            {# Password Input Field #}
             <div class="mb-3">
-              <label for="password" class="form-label">Hasło</label>
-              <input
-                type="password"
-                class="form-control"
-                id="password"
-                name="password"
-                required
-                minlength="6"
-              />
-              {# Dodajemy minlength dla podstawowej walidacji #}
+              <label for="password" class="form-label">Password</label>
+              <input type="password" class="form-control" id="password" name="password" required minlength="8" autocomplete="new-password"> {# Minlength matches backend schema #}
               <div id="passwordHelpBlock" class="form-text">
-                Hasło musi mieć co najmniej 6 znaków. {# Podstawowa informacja
-                #}
+                Password must be at least 8 characters long. {# Matches backend requirement #}
               </div>
             </div>
-            {# Można dodać potwierdzenie hasła i walidację JS, ale pomijamy w
-            MVP #}
-            <button type="submit" class="btn btn-primary w-100">
-              Zarejestruj
-            </button>
+            {# Note: Password confirmation field and client-side validation could be added but are omitted for simplicity here. #}
+
+            {# Submit Button #}
+            <button type="submit" class="btn btn-primary w-100">Register</button>
           </form>
+
+          {# Link to login page for users who already have an account #}
           <div class="text-center mt-3">
-            <small
-              >Masz już konto?
-              <a href="{{ url_for('render_login_page') }}"
-                >Zaloguj się</a
-              ></small
-            >
+            <small>Already have an account? <a href="{{ url_for('render_login_page') }}">Log In</a></small>
           </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-{% endblock %} {% block scripts %}
+        </div> {# End card-body #}
+      </div> {# End card #}
+
+    </div> {# End col #}
+  </div> {# End row #}
+</div> {# End container #}
+{% endblock %}
+
+{# --- Page-Specific Scripts Block --- #}
+{% block scripts %}
 <script>
-  // Potrzebujemy funkcji do konwersji danych formularza na JSON dla hx-post
+  // --- HTMX Extension Definition: json-form ---
+  // This custom extension intercepts HTMX POST requests from elements with hx-ext="json-form".
+  // It converts the standard form data into a JSON string and sets the Content-Type header appropriately.
   htmx.defineExtension("json-form", {
     onEvent: function (name, evt) {
+      // Check if the event is 'htmx:configRequest' (fired before sending).
       if (name === "htmx:configRequest") {
-        if (
-          evt.detail.verb === "post" &&
-          evt.target.matches("#register-form")
-        ) {
+        // Check if it's a POST request originating from our specific registration form.
+        if (evt.detail.verb === "post" && evt.target.matches("#register-form")) {
+          // Set the correct Content-Type header for JSON data.
           evt.detail.headers["Content-Type"] = "application/json";
+          // Create a FormData object from the form.
           const formData = new FormData(evt.target);
+          // Convert FormData into a plain JavaScript object.
           const object = {};
           formData.forEach((value, key) => (object[key] = value));
+          // Stringify the object and assign it to the HTMX request parameters.
+          // Note: For JSON, parameters are typically sent in the request body.
+          // Setting evt.detail.parameters might work for simple cases, but directly manipulating
+          // the request body or using a different HTMX approach might be more robust if issues arise.
+          // However, for this common pattern, setting parameters often suffices as HTMX handles placing it in the body for JSON encoding.
           evt.detail.parameters = JSON.stringify(object);
         }
       }
-    },
+    }
   });
 
-  document.body.addEventListener("htmx:afterOnLoad", function (evt) {
+  // --- HTMX Response Handling for Registration Form ---
+  // Listen for 'htmx:afterRequest' (fired after the request completes).
+  // Using 'afterRequest' as 'afterOnLoad' might be misleading since hx-swap="none".
+  document.body.addEventListener('htmx:afterRequest', function(evt) {
     const form = document.getElementById("register-form");
+    // Ensure the event originated from the registration form.
     if (evt.target === form) {
-      const xhr = evt.detail.xhr;
-      const messageArea = document.getElementById("message-area");
+      const xhr = evt.detail.xhr; // Get the XMLHttpRequest object.
+      const messageArea = document.getElementById("message-area"); // Get the message display area.
 
-      // Resetujemy klasy i treść
+      // Reset message area styling and content before showing new message.
       messageArea.classList.remove("alert-success", "alert-danger");
-      messageArea.classList.add("d-none");
+      messageArea.classList.add("d-none"); // Hide it initially
       messageArea.textContent = "";
 
-      if (xhr.status === 201) {
-        // Sukces - rejestracja pomyślna
-        console.log("Registration successful."); // Log MVP
-        messageArea.textContent =
-          "Rejestracja pomyślna! Możesz się teraz zalogować.";
-        messageArea.classList.add("alert-success");
-        messageArea.classList.remove("d-none");
-        // Czyścimy formularz po sukcesie
+      // Check if registration was successful (status code 201 Created).
+      if (evt.detail.successful && xhr.status === 201) {
+        // --- Handle Success ---
+        console.log("Registration successful."); // MVP Log
+        // Display success message.
+        messageArea.textContent = "Registration successful! You can now log in.";
+        messageArea.classList.add("alert-success"); // Apply success styling.
+        messageArea.classList.remove("d-none"); // Make message area visible.
+        // Clear the form fields after successful registration.
         form.reset();
-        // Opcjonalnie: przekierowanie na logowanie po chwili
+        // Optional: Redirect to the login page after a short delay.
         setTimeout(() => {
           window.location.href = "{{ url_for('render_login_page') }}";
-        }, 3000); // Przekierowanie po 3 sekundach
+        }, 3000); // Redirect after 3 seconds.
       } else {
-        // Błąd rejestracji (np. 400, 409, 500)
-        let detailMessage = "Wystąpił błąd podczas rejestracji.";
+        // --- Handle Failure ---
+        let detailMessage = "An error occurred during registration."; // Default error message.
         try {
+          // Attempt to parse the error response JSON.
           const errorResponse = JSON.parse(xhr.responseText);
+          // Use the 'detail' field from the response if available (common in FastAPI errors).
           if (errorResponse.detail) {
-            detailMessage = errorResponse.detail;
+             // If detail is an array (like validation errors), format it.
+             if (Array.isArray(errorResponse.detail)) {
+                 detailMessage = 'Validation Error:<ul>';
+                 errorResponse.detail.forEach(err => {
+                     const field = err.loc && err.loc.length > 1 ? `Field '${err.loc.join('.')}'` : 'Input Error';
+                     const msg = err.msg || 'Invalid value.';
+                     detailMessage += `<li>${field}: ${msg}</li>`;
+                 });
+                 detailMessage += '</ul>';
+             } else { // Otherwise, assume detail is a string.
+                 detailMessage = errorResponse.detail;
+             }
           }
         } catch (e) {
-          detailMessage = `Błąd serwera (status: ${xhr.status})`;
+          // Fallback if parsing fails or response is not JSON.
+          detailMessage = `Server error (status: ${xhr.status})`;
         }
-        console.error(
-          `Registration failed (status ${xhr.status}): ${detailMessage}`
-        ); // Log MVP
+        console.error(`Registration failed (status ${xhr.status}): ${detailMessage}`); // MVP Log
+        // Display the error message.
         messageArea.textContent = detailMessage;
-        messageArea.classList.add("alert-danger");
-        messageArea.classList.remove("d-none");
+        messageArea.classList.add("alert-danger"); // Apply error styling.
+        messageArea.classList.remove("d-none"); // Make message area visible.
       }
     }
   });
-</script>
-{# Musimy dodać atrybut hx-ext="json-form" do formularza rejestracji #}
-<script>
-  // Dodajemy rozszerzenie do formularza po załadowaniu DOM
-  document.addEventListener("DOMContentLoaded", (event) => {
-    const registerForm = document.getElementById("register-form");
+
+  // --- Dynamically Add hx-ext Attribute ---
+  // This script ensures the hx-ext="json-form" attribute is added to the form
+  // after the DOM is fully loaded, enabling the JSON conversion extension.
+  document.addEventListener('DOMContentLoaded', (event) => {
+    const registerForm = document.getElementById('register-form');
     if (registerForm) {
-      registerForm.setAttribute("hx-ext", "json-form");
+      registerForm.setAttribute('hx-ext', 'json-form');
     }
   });
 </script>
-
 {% endblock %}

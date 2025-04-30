@@ -1,53 +1,77 @@
-{# Oczekuje zmiennej 'stats' (obiekt LinkStatsResponse) w kontekście #} {% if
-stats %} {# Możemy powtórzyć całkowitą liczbę kliknięć dla kontekstu #}
+{# src/templates/partials/link_stats_details.html #} {# This partial template
+displays detailed click statistics for a specific link. It expects a 'stats'
+object (LinkStatsResponse schema) in the Jinja2 context. #} {% if stats %} {#
+Only render if the stats data was successfully passed #} {# Display the total
+click count for the link alias for context #}
 <p class="lead">
-  Całkowita liczba kliknięć w link ({{ stats.alias }}):
+  Total clicks for link (<span class="text-primary">{{ stats.alias }}</span>):
   <span class="fw-bold">{{ stats.total_clicks }}</span>
 </p>
 <hr />
 
-<h4 class="mb-3">Kliknięcia w poszczególne cele:</h4>
+{# Section for displaying clicks broken down by individual rule targets #}
+<h4 class="mb-3">Clicks per Target:</h4>
 
-{% if stats.target_clicks %}
+{% if stats.target_clicks %} {# Check if there are any per-target stats
+available #}
 <div class="table-responsive">
+  {# Ensures table responsiveness on smaller screens #}
   <table class="table table-sm table-striped">
+    {# Styling classes for the table #}
     <thead>
       <tr>
-        <th scope="col">Typ Celu</th>
-        <th scope="col">Cel (Podgląd)</th>
-        <th scope="col" class="text-center">Liczba Kliknięć</th>
-        {# Można dodać ID reguły, jeśli potrzebne do debugowania #} {#
+        <th scope="col">Target Type</th>
+        <th scope="col">Target (Preview)</th>
+        <th scope="col" class="text-center">Clicks</th>
+        {# Centered header for clicks #} {# Optional: Uncomment to display the
+        Rule ID for debugging #} {#
         <th scope="col">Rule ID</th>
         #}
       </tr>
     </thead>
     <tbody>
-      {% for target_stat in stats.target_clicks %}
+      {% for target_stat in stats.target_clicks %} {# Loop through each target
+      statistic entry #}
       <tr>
+        {# Target Type Column: Display type with an appropriate icon #}
         <td>
           {% if target_stat.target_type == 'url' %}
           <i class="bi bi-link-45deg me-1" title="URL"></i> URL {% elif
           target_stat.target_type == 'html' %}
           <i class="bi bi-filetype-html me-1" title="HTML"></i> HTML {% else %}
-          {{ target_stat.target_type }} {% endif %}
+          {{ target_stat.target_type }} {# Fallback if type is unexpected #} {%
+          endif %}
         </td>
+
+        {# Target Preview Column: Display clickable URL or placeholder for HTML
+        #}
         <td>
-          {# Dla URL pokazujemy linkowalny URL, dla HTML tylko placeholder #} {%
-          if target_stat.target_type == 'url' %}
+          {% if target_stat.target_type == 'url' %} {# Make URLs clickable and
+          open in a new tab #}
           <a
             href="{{ target_stat.target_value_preview }}"
             target="_blank"
             title="{{ target_stat.target_value_preview }}"
+            {#
+            Tooltip
+            with
+            full
+            URL
+            #}
           >
-            {{ target_stat.target_value_preview | truncate(80, True) }} {#
-            Dłuższy podgląd URL #}
+            {# Truncate long URLs for display brevity #} {{
+            target_stat.target_value_preview | truncate(80, True) }}
           </a>
-          {% else %}
+          {% else %} {# For HTML or unknown types, display the placeholder text
+          #}
           <span class="text-muted">{{ target_stat.target_value_preview }}</span>
           {% endif %}
         </td>
+
+        {# Clicks Column: Display the click count for this specific target #}
         <td class="text-center fw-bold">{{ target_stat.current_clicks }}</td>
-        {#
+
+        {# Optional: Uncomment to display the Rule ID #} {#
         <td><small class="text-muted">{{ target_stat.rule_id }}</small></td>
         #}
       </tr>
@@ -55,13 +79,14 @@ stats %} {# Możemy powtórzyć całkowitą liczbę kliknięć dla kontekstu #}
     </tbody>
   </table>
 </div>
-{% else %}
+{% else %} {# Message displayed if there are total clicks, but no specific
+target click data (e.g., only default URL used) #}
 <div class="alert alert-info" role="alert">
-  Brak zarejestrowanych kliknięć w poszczególne cele.
+  No clicks recorded for specific rule targets yet.
 </div>
-{% endif %} {% else %} {# Komunikat, jeśli dane statystyk nie zostały załadowane
-#}
+{% endif %} {% else %} {# Fallback message if the 'stats' object was not
+provided or loading failed #}
 <div class="alert alert-warning" role="alert">
-  Nie udało się załadować danych statystycznych.
+  Could not load statistics data.
 </div>
 {% endif %}

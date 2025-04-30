@@ -1,4 +1,4 @@
-# src/main.py (Corrected - Removed UI Auth Checks)
+# src/main.py
 import uvicorn
 from fastapi import (
     FastAPI,
@@ -14,80 +14,81 @@ from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import List, Optional
+from uuid import UUID
 
-# Usunięto 'import uuid', bo nie jest już potrzebny bezpośrednio tutaj
-from typing import List, Optional  # <<< Dodano Optional, jeśli get_user_id_for_ui wróci
-from uuid import UUID  # <<< Import UUID dla type hintów
-
-# Import konfiguracji
+# Import application configuration
 from src.core.config import settings
 
-# Import głównego routera API
+# Import the main API router
 from src.api.v1.api import api_v1_router
 
-# Import serwisu i wyjątków
+# Import services and custom exceptions
 from src.services.redirection_service import (
     RedirectionService,
     RedirectionAction,
     LinkNotFoundException,
 )
-
-# Usunięto drugi import LinkNotFoundException z custom_exceptions
 from src.services.custom_exceptions import (
-    LinkNotFoundException,  # Zachowano jeden import
+    LinkNotFoundException as CustomLinkNotFoundException,  # Alias to avoid name clash if needed later
 )
 
-# Import funkcji inicjalizującej klientów Supabase
+# Import Supabase initialization function
 from src.db.supabase_client import init_supabase_clients
 
-# Import zależności
+# Import dependencies
 from supabase import AsyncClient
 from src.api.deps import (
     get_redirection_service,
     get_templates,
     get_link_service,
-    # Usunięto nieużywane importy zależności związanych z get_user_id_for_ui
-    # get_current_user_id,
-    # supabase_auth_dependency,
+    # Dependencies for server-side UI auth checks were removed
 )
 
-# from src.schemas.auth import UserInfo # Niepotrzebne tutaj
 from src.services.link_service import LinkService
 from src.schemas.link import LinkResponse
 from src.schemas.pagination import PaginationParams
 
 
-# --- Lifespan ---
+# --- Application Lifespan Management ---
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
+    """
+    Asynchronous context manager to handle application startup and shutdown events.
+    Initializes resources like database connections on startup and cleans them up on shutdown.
+    """
     print("Application startup: Initializing resources...")
-    await init_supabase_clients()
+    await init_supabase_clients()  # Initialize Supabase clients
     print("Application startup: Resources initialized.")
-    yield
+    yield  # Application runs here
     print("Application shutdown: Cleaning up resources...")
+    # Add any cleanup logic here if needed in the future
     print("Application shutdown: Cleanup complete.")
 
 
-# --- Inicjalizacja Aplikacji FastAPI z lifespan ---
+# --- FastAPI Application Initialization ---
 app = FastAPI(
     title="routr UI & API - MVP",
     version="0.1.0",
     description="Application for managing dynamic redirection links with a web interface.",
-    lifespan=lifespan,
+    lifespan=lifespan,  # Register the lifespan context manager
 )
 
-# --- Montowanie Plików Statycznych ---
-# app.mount("/static", ...)
+# --- Static Files Mounting (Example - currently commented out) ---
+# base_dir = Path(__file__).resolve().parent
+# app.mount("/static", StaticFiles(directory=str(base_dir / "static")), name="static")
 
-# --- Dołączenie Routerów API ---
+# --- API Router Inclusion ---
+# Include routes defined in the v1 API router, prefixed with /api/v1
 app.include_router(api_v1_router, prefix="/api/v1")
 
-# --- Endpointy Renderujące Strony UI ---
+# --- UI Router Definition ---
+# Router for handling HTML page rendering for the web interface
 ui_router = APIRouter()
 
-# --- Usunięto funkcję pomocniczą get_user_id_for_ui ---
 
-# --- Endpointy UI (bez sprawdzania auth po stronie serwera - polegamy na JS) ---
+# --- UI Endpoints ---
+# These endpoints render HTML templates. Authentication is expected to be handled client-side via JavaScript.
 
 
 @ui_router.get(
@@ -96,9 +97,10 @@ ui_router = APIRouter()
 async def render_landing_page(
     request: Request, templates: Jinja2Templates = Depends(get_templates)
 ):
+    """Renders the public landing page."""
     print("Rendering Landing Page")
     return templates.TemplateResponse(
-        "landing_page.html", {"request": request, "now": datetime.utcnow}
+        "landing_page.html", {"request": request, "now": datetime.utcnow()}
     )
 
 
@@ -108,9 +110,10 @@ async def render_landing_page(
 async def render_login_page(
     request: Request, templates: Jinja2Templates = Depends(get_templates)
 ):
+    """Renders the login page."""
     print("Rendering Login Page")
     return templates.TemplateResponse(
-        "login.html", {"request": request, "now": datetime.utcnow}
+        "login.html", {"request": request, "now": datetime.utcnow()}
     )
 
 
@@ -120,9 +123,10 @@ async def render_login_page(
 async def render_register_page(
     request: Request, templates: Jinja2Templates = Depends(get_templates)
 ):
+    """Renders the registration page."""
     print("Rendering Register Page")
     return templates.TemplateResponse(
-        "register.html", {"request": request, "now": datetime.utcnow}
+        "register.html", {"request": request, "now": datetime.utcnow()}
     )
 
 
@@ -132,11 +136,19 @@ async def render_register_page(
 async def render_dashboard(
     request: Request, templates: Jinja2Templates = Depends(get_templates)
 ):
-    # Usunięto blok sprawdzający user_id po stronie serwera
+    """
+    Renders the main dashboard shell.
+    Actual link data is loaded dynamically client-side (e.g., via HTMX or JavaScript).
+    Authentication is checked client-side.
+    """
     print(f"Rendering dashboard shell (auth checked client-side)")
-    # Renderujemy tylko powłokę, JS/HTMX załaduje resztę i sprawdzi token
     return templates.TemplateResponse(
-        "links_list.html", {"request": request, "links": [], "now": datetime.utcnow}
+        "links_list.html",
+        {
+            "request": request,
+            "links": [],
+            "now": datetime.utcnow(),
+        },  # Pass empty list initially
     )
 
 
@@ -149,10 +161,13 @@ async def render_dashboard(
 async def render_create_link_form(
     request: Request, templates: Jinja2Templates = Depends(get_templates)
 ):
-    # Usunięto blok sprawdzający user_id po stronie serwera
+    """
+    Renders the form for creating a new link.
+    Authentication is checked client-side.
+    """
     print("Rendering create link form (auth checked client-side)")
     return templates.TemplateResponse(
-        "links_create.html", {"request": request, "now": datetime.utcnow}
+        "links_create.html", {"request": request, "now": datetime.utcnow()}
     )
 
 
@@ -164,94 +179,115 @@ async def render_create_link_form(
 )
 async def render_edit_link_form(
     request: Request,
-    link_id: UUID,  # Nadal potrzebujemy link_id ze ścieżki
+    link_id: UUID,  # Extract link_id from the URL path
     templates: Jinja2Templates = Depends(get_templates),
-    # Usunięto link_service, bo dane będą ładowane przez HTMX
+    # Link data is not fetched here; it will be loaded client-side (e.g., via HTMX)
 ):
-    """Renderuje powłokę strony edycji linku. Dane zostaną załadowane przez HTMX."""
-    # Usunięto blok sprawdzający user_id po stronie serwera
-    # Usunięto blok try...except pobierający dane linku
+    """
+    Renders the shell page for editing an existing link.
+    The form fields will be populated dynamically client-side using the link_id.
+    Authentication is checked client-side.
+    """
     print(
         f"Rendering edit form shell for link_id: {link_id} (auth checked client-side)"
     )
-    # Przekazujemy tylko link_id do szablonu, aby HTMX wiedział, jakie dane załadować
+    # Pass link_id to the template so client-side code knows which link to fetch
     return templates.TemplateResponse(
         "links_edit.html",
         {
             "request": request,
-            "link_id": link_id,  # Przekazujemy tylko ID
-            "link": None,  # Dane linku załaduje HTMX
-            "now": datetime.utcnow,
+            "link_id": link_id,  # ID needed for client-side fetch
+            "link": None,  # Placeholder, data loaded by HTMX/JS
+            "now": datetime.utcnow(),
         },
     )
 
 
-# <<< Include the UI router BEFORE the catch-all redirection endpoint >>>
+# --- UI Router Inclusion ---
+# IMPORTANT: Include the UI router *before* the catch-all redirection endpoint
+# to ensure UI paths like /app/links are matched correctly.
 app.include_router(ui_router, prefix="/app")
 
 
-# --- Endpoint Publicznego Przekierowania ---
+# --- Public Redirection Endpoint ---
 @app.get(
     "/{alias_path:path}",
     summary="Handle Link Redirection",
-    description="Public endpoint that processes a routr link alias...",
+    description="Public endpoint that processes a routr link alias, determines the appropriate action (e.g., redirect, serve HTML), and executes it.",
     tags=["Public Redirection"],
-    include_in_schema=False,
+    include_in_schema=False,  # Hide from OpenAPI docs as it's a catch-all
 )
 async def handle_public_redirection(
-    alias_path: str,
+    alias_path: str,  # The path requested by the user, treated as a potential link alias
     request: Request,
     redirection_service: RedirectionService = Depends(get_redirection_service),
 ):
-    # ... (logika bez zmian) ...
+    """
+    Handles incoming requests that don't match any other specific API or UI routes.
+    It attempts to find a matching link alias and perform the configured action.
+    """
     print(f"Processing redirection request for alias: {alias_path}")
     try:
+        # Determine the action based on the alias and defined rules
         action, value = await redirection_service.process_redirection(alias_path)
+
         if (
             action == RedirectionAction.REDIRECT_URL
             or action == RedirectionAction.REDIRECT_DEFAULT
         ):
+            # Redirect to the target URL found for the alias or its default
             print(f"Redirecting '{alias_path}' to URL: {value}")
             return RedirectResponse(url=str(value), status_code=status.HTTP_302_FOUND)
         elif action == RedirectionAction.SERVE_HTML:
+            # Serve HTML content directly (e.g., for tracking pixels or simple pages)
             print(f"Serving HTML content for alias: {alias_path}")
             return HTMLResponse(content=value, status_code=status.HTTP_200_OK)
         elif action == RedirectionAction.REDIRECT_GLOBAL_FALLBACK:
+            # No specific rule or default found, redirect to the main application UI
             print(
                 f"No matching rule or default URL for alias '{alias_path}'. Redirecting to global fallback."
             )
+            # Redirects to the UI landing/dashboard page
             return RedirectResponse(url="/app/", status_code=status.HTTP_302_FOUND)
         else:
+            # Fallback for unexpected actions, redirecting to the UI
             print(
                 f"ERROR: Unexpected redirection action '{action}' for alias: {alias_path}"
             )
             return RedirectResponse(url="/app/", status_code=status.HTTP_302_FOUND)
+
     except LinkNotFoundException:
-        print(f"Link alias not found: {alias_path}")
+        # Alias explicitly not found in the database
+        print(f"Link alias not found: {alias_path}. Redirecting to global fallback.")
         return RedirectResponse(url="/app/", status_code=status.HTTP_302_FOUND)
     except Exception as e:
+        # Catch any other unexpected errors during redirection processing
         print(f"ERROR processing redirection for alias '{alias_path}': {e}")
+        # Redirect to the UI as a safe fallback
         return RedirectResponse(url="/app/", status_code=status.HTTP_302_FOUND)
 
 
-# --- Endpoint główny (/) ---
+# --- Root Endpoint Redirect ---
 @app.get(
     "/", summary="Root Endpoint Redirect", tags=["General"], include_in_schema=False
 )
 async def read_root_redirect():
+    """Redirects requests to the server root ('/') to the main UI application path ('/app/')."""
     return RedirectResponse(url="/app/", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
-# <<< DODAJ TEN BLOK DO DEBUGOWANIA >>>
+# --- Debug: Print Registered Routes ---
+# Useful for verifying that routes are registered as expected, especially the catch-all.
 print("\n--- Registered Routes ---")
 for route in app.routes:
     if hasattr(route, "path") and hasattr(route, "methods"):
         print(f"Path: {route.path}, Methods: {route.methods}")
-    # Obsługa APIRouter (jeśli chcesz zobaczyć ścieżki wewnątrz routerów)
-    # elif isinstance(route, routing.APIRoute): # Potrzebny import from starlette import routing
-    #     print(f"Route: {route.path}, Methods: {route.methods}")
+    # Can be extended to introspect routes within APIRouters if needed
 print("-------------------------\n")
-# --- Uruchomienie ---
+
+# --- Server Execution ---
 if __name__ == "__main__":
+    # Starts the Uvicorn server for local development.
+    # `reload=True` enables auto-reloading when code changes are detected.
     print("Starting Uvicorn server for local development...")
     uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)

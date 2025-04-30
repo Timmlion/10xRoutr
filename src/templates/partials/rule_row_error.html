@@ -1,5 +1,20 @@
-{# Wyświetla komunikat błędu w miejscu listy reguł #}
-<div class="alert alert-danger text-center" role="alert">
-  <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error_message |
-  default('Wystąpił błąd podczas ładowania reguł.') }}
-</div>
+{# src/templates/partials/rule_row_error.html #} {# This partial template is
+designed to be displayed within the rules table body when there's an error
+fetching the list of rules. It renders a single table row (implied context,
+often needs `
+<tr>
+  ` tags around it if used directly in `
+  <tbody>
+    `) containing a Bootstrap error alert. Expected Jinja2 context variables: -
+    error_message (optional): The specific error message to display. #} {# Use
+    Bootstrap's alert component with danger styling for errors. 'text-center'
+    centers the content within the alert. #}
+    <div class="alert alert-danger text-center" role="alert">
+      {# Include a Bootstrap Icon for visual indication of an error. #}
+      <i class="bi bi-exclamation-triangle-fill me-2"></i>
+      {# Display the provided 'error_message'. If 'error_message' is not
+      provided in the context, fall back to a default message. #} {{
+      error_message | default('An error occurred while loading the rules.') }}
+    </div>
+  </tbody>
+</tr>

@@ -1,52 +1,70 @@
 # src/schemas/auth.py
 from pydantic import BaseModel, EmailStr, Field, UUID4, ConfigDict
-from typing import Optional, Any  # Import Any if using extra='allow'
-from datetime import datetime  # Import if needed for UserInfo
+from typing import Optional, Any
+from datetime import (
+    datetime,
+)  # Keep import if using datetime fields in UserInfo/UserInfoMinimal
 
 
 class UserLogin(BaseModel):
-    """Schema for user login request body."""
+    """Schema defining the expected structure for user login requests."""
 
-    email: EmailStr
+    email: EmailStr  # Ensures the email field is a valid email format.
     password: str
 
 
 class UserRegister(BaseModel):
-    """Schema for user registration request body."""
+    """Schema defining the expected structure for user registration requests."""
 
-    email: EmailStr
+    email: EmailStr  # Ensures the email field is a valid email format.
+    # Field validation ensures password meets minimum length requirement.
     password: str = Field(
-        ..., min_length=8, description="Password must be at least 8 characters long."
+        ...,  # ... indicates the field is required
+        min_length=8,
+        description="Password must be at least 8 characters long.",
     )
-    # Add more complex password validation rules here if needed using custom validators
+    # Custom Pydantic validators can be added here for more complex password rules.
 
 
-# --- User Info DTOs (used in responses) ---
+# --- User Information Data Transfer Objects (DTOs) ---
+# These models represent user data, typically used in responses.
+
+
 class UserInfo(BaseModel):
-    """Represents user information returned by Supabase upon successful login."""
+    """
+    Represents the structure of user information often returned by
+    Supabase after successful authentication or user retrieval.
+    Maps relevant fields from the Supabase User object.
+    """
 
-    id: UUID4
-    aud: str  # Audience
-    role: str  # e.g., 'authenticated'
-    email: Optional[EmailStr] = None
-    # Add other relevant fields from Supabase user object if needed
+    id: UUID4  # User's unique identifier (UUID).
+    aud: str  # Audience claim, typically 'authenticated'.
+    role: str  # User role, e.g., 'authenticated'.
+    email: Optional[EmailStr] = None  # User's email, may not always be present.
+
+    # Add other relevant fields from the Supabase user object if needed for your application.
+    # Examples:
     # phone: Optional[str] = None
     # created_at: Optional[datetime] = None
-    # confirmed_at: Optional[datetime] = None
+    # confirmed_at: Optional[datetime] = None # Email/Phone confirmation timestamp
     # email_confirmed_at: Optional[datetime] = None
     # last_sign_in_at: Optional[datetime] = None
     # updated_at: Optional[datetime] = None
 
+    # Pydantic v2 configuration to enable creating the model from object attributes (like Supabase user object).
     model_config = ConfigDict(from_attributes=True)
 
 
 class UserInfoMinimal(BaseModel):
-    """Minimal user info returned upon registration (might differ from login)."""
+    """
+    Represents a potentially minimal set of user information, often returned
+    immediately after registration before full details might be available or needed.
+    """
 
     id: UUID4
-    aud: Optional[str] = (
-        None  # May not always be present depending on Supabase version/response
-    )
+    # Fields like 'aud' and 'role' might be optional or absent in some Supabase responses,
+    # particularly immediately post-registration.
+    aud: Optional[str] = None
     role: Optional[str] = None
     email: Optional[EmailStr] = None
     # created_at: Optional[datetime] = None
@@ -54,25 +72,36 @@ class UserInfoMinimal(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-# --- Token/Session Response DTOs ---
+# --- Token and Session Response DTOs ---
+
+
 class TokenResponse(BaseModel):
-    """Schema for the response after successful login."""
+    """
+    Schema for the response payload after a successful user login,
+    typically containing JWT access tokens and user information.
+    Follows common OAuth2/JWT patterns.
+    """
 
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: Optional[int] = None  # Provided by Supabase? Check response.
-    refresh_token: Optional[str] = None  # Provided by Supabase? Check response.
-    user: UserInfo
+    access_token: (
+        str  # The JWT access token used for authenticating subsequent requests.
+    )
+    token_type: str = "bearer"  # Standard token type, usually 'bearer'.
+    # Optional fields that Supabase might include in its session response.
+    expires_in: Optional[int] = None  # Token expiry time in seconds.
+    refresh_token: Optional[str] = None  # Token used to obtain a new access token.
+    user: UserInfo  # Includes detailed information about the logged-in user.
 
-    # If Supabase response might contain extra fields you don't map
-    # model_config = ConfigDict(
-    #     extra='allow'
-    # )
+    # If the actual Supabase response includes extra fields not defined here,
+    # you can uncomment the following config to ignore them instead of raising an error.
+    # model_config = ConfigDict(extra='ignore')
 
 
 class UserRegistrationResponse(BaseModel):
-    """Schema for the response after successful registration."""
+    """
+    Schema for the response payload after a successful user registration.
+    """
 
-    user: UserInfoMinimal
-    # session: Optional[Any] = None # Supabase might return a session object or null
-    # Define a Session model if needed, or use Any/dict
+    user: UserInfoMinimal  # Contains the basic information of the newly created user.
+    # Supabase might return a 'session' object (containing tokens) or null upon registration.
+    # Define a detailed Session model if you need to parse it, or use Any/dict for flexibility.
+    # session: Optional[Any] = None

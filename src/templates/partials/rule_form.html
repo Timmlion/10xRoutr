@@ -1,55 +1,86 @@
-<rule_form>{# Oczekuje: link_id, request, now. Opcjonalnie: rule (obiekt RuleResponse dla edycji) #}
+{# src/templates/partials/rule_form.html #}
+{#
+  This partial template renders a form for creating or editing a routing rule.
+  It is designed to be loaded dynamically, likely within a Bootstrap modal.
+
+  Expected Jinja2 context variables:
+  - link_id: The UUID of the parent link.
+  - request: The FastAPI request object (for potentially generating URLs, etc.).
+  - now: A datetime object representing the current time (used for default date in Flatpickr).
+  - rule (optional): A RuleResponse object containing existing rule data if editing.
+#}
+
+{# Determine if the form is in 'edit' mode based on the presence of the 'rule' object. #}
 {% set is_edit = rule is not none %}
 
+{# The main form element. Uses HTMX for submission. #}
+{# The ID is dynamically generated to be unique, especially important if multiple forms exist (e.g., multiple edit modals). #}
 <form id="rule-form-{{ link_id }}{{ '-' ~ rule.id if is_edit else '-new' }}"
       {% if is_edit %}
-      hx-patch="/api/v1/links/{{ link_id }}/rules/{{ rule.id }}"
+        {# In edit mode, submit via PATCH to the specific rule's endpoint. #}
+        hx-patch="/api/v1/links/{{ link_id }}/rules/{{ rule.id }}"
       {% else %}
-      hx-post="/api/v1/links/{{ link_id }}/rules/create"
+        {# In create mode, submit via POST to the rule creation endpoint for the link. #}
+        hx-post="/api/v1/links/{{ link_id }}/rules/create"
       {% endif %}
-      {# Usunięto hx-target i hx-swap - odświeżenie listy wywoła JS #}
+      {# NOTE: hx-target and hx-swap are intentionally removed/omitted here.
+               The JavaScript below handles the form response (showing messages,
+               closing the modal, and triggering a refresh of the rules list)
+               instead of relying on HTMX's default content swapping. #}
+      {# Specify the element to show as a loading indicator during the request. #}
       hx-indicator="#rule-form-spinner-{{ rule.id if is_edit else 'new' }}">
 
+    {# Modal Header: Title changes based on edit/create mode. #}
     <div class="modal-header">
         <h5 class="modal-title" id="ruleEditModalLabel-{{ rule.id if is_edit else 'new' }}">
-            {% if is_edit %}Edytuj Regułę (Priorytet: {{ rule.priority }}){% else %}Dodaj Nową Regułę{% endif %}
+            {% if is_edit %}Edit Rule (Priority: {{ rule.priority }}){% else %}Add New Rule{% endif %}
         </h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
     </div>
+
+    {# Modal Body: Contains the form fields and a dedicated message area. #}
     <div class="modal-body">
+        {# Area specifically for displaying success or error messages related to this form submission. #}
         <div id="rule-form-message-area-{{ rule.id if is_edit else 'new' }}" class="mb-3"></div>
 
+        {# Priority Field (Required) #}
         <div class="mb-3 row">
-            <label for="priority-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Priorytet <span class="text-danger">*</span></label>
+            <label for="priority-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Priority <span class="text-danger">*</span></label>
             <div class="col-sm-9">
                  <input type="number" class="form-control" id="priority-{{ rule.id if is_edit else 'new' }}" name="priority" required min="1"
                        value="{{ rule.priority if is_edit else '' }}" placeholder="1">
-                 <div class="form-text">Niższa liczba = wyższy priorytet. Musi być unikalny.</div>
+                 <div class="form-text">Lower number = higher priority. Must be unique per link.</div>
             </div>
         </div>
 
+        {# Rule Type Selection (Required) #}
         <div class="mb-3 row">
-             <label for="rule_type-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Typ Reguły <span class="text-danger">*</span></label>
+             <label for="rule_type-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Rule Type <span class="text-danger">*</span></label>
              <div class="col-sm-9">
-                {# Dodano data-form-id do przekazania ID formularza do funkcji JS #}
+                {# The 'onchange' attribute calls a JavaScript function to show/hide relevant fields.
+                   'data-form-id' passes the form's unique ID to the JS function (though the cleaner approach uses event listeners below). #}
                 <select class="form-select" id="rule_type-{{ rule.id if is_edit else 'new' }}" name="rule_type" required data-form-id="rule-form-{{ link_id }}{{ '-' ~ rule.id if is_edit else '-new' }}" onchange="toggleRuleFields(this)">
-                    <option value="time" {% if is_edit and rule.rule_type == 'time' %}selected{% endif %}>Czasowa</option>
-                    <option value="clicks" {% if is_edit and rule.rule_type == 'clicks' %}selected{% endif %}>Ilościowa</option>
+                    {# Options are pre-selected based on edit mode and existing rule data. #}
+                    <option value="time" {% if is_edit and rule.rule_type == 'time' %}selected{% endif %}>Time-based</option>
+                    <option value="clicks" {% if is_edit and rule.rule_type == 'clicks' %}selected{% endif %}>Clicks-based</option>
                 </select>
              </div>
         </div>
 
+        {# Container for conditionally displayed fields based on Rule Type #}
         <div class="rule-fields-container">
-            <div id="time-fields-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-fields">
+            {# Time-based Fields (Start/End Time) #}
+            <div id="time-fields-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-fields" style="display: none;"> {# Initially hidden #}
                  <div class="mb-3 row">
-                     <label for="start_time-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Czas Start (UTC) <span class="text-danger">*</span></label>
+                     <label for="start_time-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Start Time (UTC) <span class="text-danger">*</span></label>
                      <div class="col-sm-9">
+                        {# Uses Flatpickr for date/time selection (initialized via JS below). #}
                         <input type="text" class="form-control flatpickr-datetime" id="start_time-{{ rule.id if is_edit else 'new' }}" name="start_time"
                                value="{{ rule.start_time.strftime('%Y-%m-%d %H:%M') if is_edit and rule.start_time else '' }}" placeholder="YYYY-MM-DD HH:MM">
                      </div>
                  </div>
                  <div class="mb-3 row">
-                     <label for="end_time-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Czas Koniec (UTC) <span class="text-danger">*</span></label>
+                     <label for="end_time-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">End Time (UTC) <span class="text-danger">*</span></label>
                      <div class="col-sm-9">
                          <input type="text" class="form-control flatpickr-datetime" id="end_time-{{ rule.id if is_edit else 'new' }}" name="end_time"
                                 value="{{ rule.end_time.strftime('%Y-%m-%d %H:%M') if is_edit and rule.end_time else '' }}" placeholder="YYYY-MM-DD HH:MM">
@@ -57,194 +88,235 @@
                  </div>
             </div>
 
-            <div id="clicks-fields-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-fields">
+            {# Clicks-based Fields (Max Clicks) #}
+            <div id="clicks-fields-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-fields" style="display: none;"> {# Initially hidden #}
                  <div class="mb-3 row">
-                     <label for="max_clicks-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Max Kliknięć <span class="text-danger">*</span></label>
+                     <label for="max_clicks-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Max Clicks <span class="text-danger">*</span></label>
                      <div class="col-sm-9">
                         <input type="number" class="form-control" id="max_clicks-{{ rule.id if is_edit else 'new' }}" name="max_clicks" min="1"
                                value="{{ rule.max_clicks if is_edit and rule.max_clicks else '' }}" placeholder="100">
-                         <div class="form-text">Limit kliknięć dla tej reguły.</div>
+                         <div class="form-text">Click limit for this specific rule.</div>
                      </div>
                 </div>
             </div>
         </div>
 
+        {# Target Type Selection (Required) #}
          <div class="mb-3 row">
-             <label for="target_type-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Typ Celu <span class="text-danger">*</span></label>
+             <label for="target_type-{{ rule.id if is_edit else 'new' }}" class="col-sm-3 col-form-label">Target Type <span class="text-danger">*</span></label>
              <div class="col-sm-9">
-                {# Dodano data-form-id do przekazania ID formularza do funkcji JS #}
+                 {# Similar to Rule Type, uses JS to toggle relevant target value input field. #}
                 <select class="form-select" id="target_type-{{ rule.id if is_edit else 'new' }}" name="target_type" required data-form-id="rule-form-{{ link_id }}{{ '-' ~ rule.id if is_edit else '-new' }}" onchange="toggleTargetFields(this)">
-                    <option value="url" {% if not is_edit or rule.target_type == 'url' %}selected{% endif %}>Zewnętrzny URL</option>
-                    <option value="html" {% if is_edit and rule.target_type == 'html' %}selected{% endif %}>Własny HTML</option>
+                    {# Default to URL unless editing an existing HTML rule. #}
+                    <option value="url" {% if not is_edit or rule.target_type == 'url' %}selected{% endif %}>External URL</option>
+                    <option value="html" {% if is_edit and rule.target_type == 'html' %}selected{% endif %}>Custom HTML</option>
                 </select>
              </div>
         </div>
 
+        {# Container for conditionally displayed Target Value fields #}
         <div class="target-fields-container">
-            <div id="target-url-field-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-target-fields">
-                <label for="target_value_url-{{ rule.id if is_edit else 'new' }}" class="form-label">Adres URL Celu <span class="text-danger">*</span></label>
-                <input type="url" class="form-control" id="target_value_url-{{ rule.id if is_edit else 'new' }}" name="target_value"
+            {# Target Value Field (URL) #}
+            <div id="target-url-field-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-target-fields" style="display: none;"> {# Initially hidden #}
+                <label for="target_value_url-{{ rule.id if is_edit else 'new' }}" class="form-label">Target URL <span class="text-danger">*</span></label>
+                <input type="url" class="form-control" id="target_value_url-{{ rule.id if is_edit else 'new' }}" name="target_value" {# Name is toggled by JS #}
                        value="{{ rule.target_value if is_edit and rule.target_type == 'url' else '' }}" placeholder="https://example.com/promo">
             </div>
 
-            <div id="target-html-field-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-target-fields">
-                 <label for="target_value_html-{{ rule.id if is_edit else 'new' }}" class="form-label">Kod HTML Celu <span class="text-danger">*</span></label>
-                 <textarea class="form-control" id="target_value_html-{{ rule.id if is_edit else 'new' }}" name="target_value" rows="6" placeholder="<html>...</html>">{{ rule.target_value if is_edit and rule.target_type == 'html' else '' }}</textarea>
-                 <div class="form-text">Wklej tutaj swój kod HTML.</div>
+            {# Target Value Field (HTML) #}
+            <div id="target-html-field-{{ rule.id if is_edit else 'new' }}" class="mb-3 conditional-target-fields" style="display: none;"> {# Initially hidden #}
+                 <label for="target_value_html-{{ rule.id if is_edit else 'new' }}" class="form-label">Target HTML Code <span class="text-danger">*</span></label>
+                 <textarea class="form-control" id="target_value_html-{{ rule.id if is_edit else 'new' }}" name="target_value" rows="6" placeholder="<html>...</html>">{{ rule.target_value if is_edit and rule.target_type == 'html' else '' }}</textarea> {# Name is toggled by JS #}
+                 <div class="form-text">Paste your HTML code here.</div>
             </div>
         </div>
 
-    </div>
+    </div> {# End modal-body #}
+
+    {# Modal Footer: Contains Cancel and Submit buttons. #}
     <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Anuluj</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="submit" class="btn btn-primary">
+            {# HTMX loading indicator (spinner) #}
             <span id="rule-form-spinner-{{ rule.id if is_edit else 'new' }}" class="htmx-indicator spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-            {% if is_edit %}Zapisz Zmiany{% else %}Utwórz Regułę{% endif %}
+            {# Submit button text changes based on mode #}
+            {% if is_edit %}Save Changes{% else %}Create Rule{% endif %}
         </button>
     </div>
 </form>
 
+{# --- JavaScript for Form Interactivity --- #}
 <script>
  (function() {
+    // Use an IIFE to scope variables and functions specific to this form instance.
     const formId = "rule-form-{{ link_id }}{{ '-' ~ rule.id if is_edit else '-new' }}";
     const formElement = document.getElementById(formId);
     if (!formElement) {
+        // Prevent errors if the form element isn't found (e.g., if the partial failed to load correctly).
         console.error("Rule form element not found:", formId);
         return;
     }
 
-    console.log("Initializing scripts for form:", formId);
+    // console.debug("Initializing scripts for form:", formId);
 
-    // Inicjalizacja Flatpickr
+    // --- Initialize Flatpickr Date/Time Pickers ---
     const datetimePickers = formElement.querySelectorAll('.flatpickr-datetime');
     flatpickr(datetimePickers, {
-        enableTime: true,
-        dateFormat: "Y-m-d H:i",
-        time_24hr: true,
-        allowInput: true,
-        // Używamy `now`, które powinno być przekazane w kontekście przez API endpoint
+        enableTime: true, // Allow selecting time
+        dateFormat: "Y-m-d H:i", // Format matching expected backend format
+        time_24hr: true, // Use 24-hour time format
+        allowInput: true, // Allow direct text input
+        // Use 'now' context variable for default date ONLY when creating a new rule.
+        // Ensure 'now' is passed correctly from the server endpoint rendering this partial.
         defaultDate: {% if not is_edit and now %}"{{ now.strftime('%Y-%m-%d %H:%M') }}"{% else %}null{% endif %}
     });
 
-    // Funkcje przełączające pola - teraz jako funkcje lokalne IIFE
+    // --- Functions to Toggle Conditional Fields ---
+
+    // Shows/hides time or clicks fields based on the selected Rule Type.
     const toggleRuleFields = (selectElement) => {
-        const form = selectElement.closest('form'); // Znajdź formularz nadrzędny
+        const form = selectElement.closest('form'); // Find the parent form
         if (!form) return;
         const ruleType = selectElement.value;
-        const container = form.querySelector('.rule-fields-container');
+        const container = form.querySelector('.rule-fields-container'); // Find the container for conditional rule fields
         if (!container) return;
 
+        // Find the specific field containers and inputs within this form instance
         const timeFields = container.querySelector('.conditional-fields[id^="time-fields"]');
         const clicksFields = container.querySelector('.conditional-fields[id^="clicks-fields"]');
         const startTimeInput = timeFields ? timeFields.querySelector('input[name="start_time"]') : null;
         const endTimeInput = timeFields ? timeFields.querySelector('input[name="end_time"]') : null;
         const maxClicksInput = clicksFields ? clicksFields.querySelector('input[name="max_clicks"]') : null;
 
+        // Toggle visibility based on selected rule type
         if (timeFields) timeFields.style.display = (ruleType === 'time') ? '' : 'none';
         if (clicksFields) clicksFields.style.display = (ruleType === 'clicks') ? '' : 'none';
 
+        // Toggle the 'required' attribute on inputs based on the selected rule type
+        // This helps with client-side form validation.
         if (startTimeInput) startTimeInput.required = (ruleType === 'time');
         if (endTimeInput) endTimeInput.required = (ruleType === 'time');
         if (maxClicksInput) maxClicksInput.required = (ruleType === 'clicks');
     };
 
+    // Shows/hides URL or HTML input fields based on the selected Target Type.
     const toggleTargetFields = (selectElement) => {
-        const form = selectElement.closest('form');
+        const form = selectElement.closest('form'); // Find the parent form
         if (!form) return;
         const targetType = selectElement.value;
-        const container = form.querySelector('.target-fields-container');
+        const container = form.querySelector('.target-fields-container'); // Find the container for conditional target fields
         if (!container) return;
 
+        // Find the specific field containers and inputs/textareas within this form instance
         const targetUrlField = container.querySelector('.conditional-target-fields[id^="target-url-field"]');
         const targetHtmlField = container.querySelector('.conditional-target-fields[id^="target-html-field"]');
         const targetUrlInput = targetUrlField ? targetUrlField.querySelector('input[id^="target_value_url"]') : null;
         const targetHtmlTextarea = targetHtmlField ? targetHtmlField.querySelector('textarea[id^="target_value_html"]') : null;
 
+        // Toggle visibility based on selected target type
         if (targetUrlField) targetUrlField.style.display = (targetType === 'url') ? '' : 'none';
         if (targetHtmlField) targetHtmlField.style.display = (targetType === 'html') ? '' : 'none';
 
+        // IMPORTANT: Toggle the 'name' attribute and 'required' status.
+        // Only the *visible* input/textarea should have name="target_value" to be submitted.
         if (targetUrlInput) {
-            targetUrlInput.name = (targetType === 'url') ? 'target_value' : '';
+            targetUrlInput.name = (targetType === 'url') ? 'target_value' : ''; // Set name only if visible
             targetUrlInput.required = (targetType === 'url');
         }
          if (targetHtmlTextarea) {
-            targetHtmlTextarea.name = (targetType === 'html') ? 'target_value' : '';
+            targetHtmlTextarea.name = (targetType === 'html') ? 'target_value' : ''; // Set name only if visible
             targetHtmlTextarea.required = (targetType === 'html');
          }
     };
 
-    // Przypisz funkcje do globalnego obiektu, aby `onchange` mógł je znaleźć LUB użyj addEventListener
-    // Podejście z addEventListener jest czystsze:
+    // --- Attach Event Listeners and Initialize Field States ---
+
+    // Use event listeners instead of inline 'onchange' for cleaner separation.
     const ruleTypeSelect = formElement.querySelector('select[name="rule_type"]');
     if (ruleTypeSelect) {
         ruleTypeSelect.addEventListener('change', (event) => toggleRuleFields(event.target));
+        // Initial call to set the correct state when the form loads (especially for editing)
+        toggleRuleFields(ruleTypeSelect);
     }
+
     const targetTypeSelect = formElement.querySelector('select[name="target_type"]');
     if (targetTypeSelect) {
         targetTypeSelect.addEventListener('change', (event) => toggleTargetFields(event.target));
+         // Initial call to set the correct state
+        toggleTargetFields(targetTypeSelect);
     }
 
-    // Uruchom funkcje przełączające przy inicjalizacji
-    if (ruleTypeSelect) toggleRuleFields(ruleTypeSelect);
-    if (targetTypeSelect) toggleTargetFields(targetTypeSelect);
-
-    // Obsługa odpowiedzi formularza HTMX
+    // --- HTMX Form Response Handling ---
      formElement.addEventListener('htmx:afterRequest', function(evt) {
-         if (evt.target !== formElement) return; // Upewnij się, że event pochodzi z tego formularza
+         // Ensure the event originated from *this* specific form instance.
+         if (evt.target !== formElement) return;
 
-         const xhr = evt.detail.xhr;
-         const messageArea = formElement.querySelector('[id^="rule-form-message-area"]');
-         if (!messageArea) return;
-         messageArea.innerHTML = '';
+         const xhr = evt.detail.xhr; // The XMLHttpRequest object
+         const messageArea = formElement.querySelector('[id^="rule-form-message-area"]'); // Find the message area within this form
+         if (!messageArea) return; // Exit if message area not found
+         messageArea.innerHTML = ''; // Clear previous messages
 
          if (evt.detail.successful) {
-             console.log('Rule form submitted successfully for form:', formId);
+             // --- Handle Success (2xx status) ---
+             // console.debug('Rule form submitted successfully for form:', formId);
+             // Find the closest modal ancestor and hide it using Bootstrap's JS API.
              const modalElement = formElement.closest('.modal');
              if (modalElement) {
                  const modalInstance = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
                  modalInstance.hide();
              }
-             console.log('Triggering rules list refresh (loadRules event)');
-             htmx.trigger(document.body, 'loadRules', {}); // Wywołaj odświeżenie listy
+             // Trigger a custom event ('loadRules') on the document body.
+             // Another part of the application (e.g., the rules list container)
+             // should be listening for this event to refresh itself via HTMX.
+             // console.debug('Triggering rules list refresh (loadRules event)');
+             htmx.trigger(document.body, 'loadRules', {}); // Trigger refresh
 
-             // Opcjonalny globalny komunikat sukcesu
-             const globalMessageArea = document.getElementById("global-message-area")?.querySelector('.col-lg-8');
+             // Optional: Display a global success message outside the modal.
+             const globalMessageArea = document.getElementById("global-message-area")?.querySelector('.col-lg-8'); // Find the global message area
              if (globalMessageArea) {
-                 const successMsg = evt.requestConfig.verb === 'post' ? 'Reguła została pomyślnie utworzona.' : 'Zmiany w regule zostały zapisane.';
+                 const successMsg = evt.requestConfig.verb === 'post' ? 'Rule created successfully.' : 'Rule updated successfully.';
                  globalMessageArea.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert">
                                                     ${successMsg}
                                                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                                                   </div>`;
              }
          } else {
-             console.error('Rule form submission failed for form:', formId, evt.detail);
-             let userFriendlyMessage = 'Wystąpił błąd podczas zapisu reguły.';
-              try {
+             // --- Handle Failure (non-2xx status) ---
+             console.error('Rule form submission failed for form:', formId, "Status:", xhr.status, "Response:", xhr.responseText);
+             let userFriendlyMessage = 'An error occurred while saving the rule.'; // Default error message
+
+             // Attempt to parse the JSON error response from the server.
+             try {
                 const errorResponse = JSON.parse(xhr.responseText);
+                // Handle FastAPI/Pydantic validation errors (status 422)
                  if (xhr.status === 422 && errorResponse.detail && Array.isArray(errorResponse.detail)) {
-                    userFriendlyMessage = 'Błąd walidacji danych:<ul>';
+                    userFriendlyMessage = 'Validation Error:<ul>';
                     errorResponse.detail.forEach(err => {
-                        const field = err.loc && err.loc.length > 1 ? `Pole '${err.loc.join('.')}'` : 'Błąd';
-                        const msg = err.msg || 'Nieprawidłowa wartość.';
+                        // Try to create a meaningful field name from the error location info
+                        const field = err.loc && err.loc.length > 1 ? `Field '${err.loc.join('.')}'` : 'Input Error';
+                        const msg = err.msg || 'Invalid value.';
                         userFriendlyMessage += `<li>${field}: ${msg}</li>`;
                     });
                     userFriendlyMessage += '</ul>';
+                // Handle other errors where 'detail' is a simple string (custom exceptions)
                 } else if (errorResponse.detail && typeof errorResponse.detail === 'string') {
                      userFriendlyMessage = errorResponse.detail;
+                // Fallback for other structured errors or generic server errors
                 } else {
-                     userFriendlyMessage = `Błąd serwera (status: ${xhr.status}).`;
+                     userFriendlyMessage = `Server error (status: ${xhr.status}). Please check inputs or try again.`;
                 }
             } catch (e) {
-                 userFriendlyMessage = `Błąd serwera (status: ${xhr.status}).`;
+                 // Fallback if the response wasn't valid JSON
+                 userFriendlyMessage = `Server error (status: ${xhr.status}). Please try again.`;
             }
+             // Display the error message within the modal's dedicated message area.
              const alertDiv = document.createElement('div');
-             alertDiv.className = "alert alert-danger";
+             alertDiv.className = "alert alert-danger"; // Use Bootstrap's danger alert styling
              alertDiv.setAttribute('role', 'alert');
              alertDiv.innerHTML = userFriendlyMessage;
-             messageArea.appendChild(alertDiv);
+             messageArea.appendChild(alertDiv); // Add the alert to the message area
          }
      });
 
- })();
+ })(); // Immediately invoke the IIFE
 </script>
-</rule_form>

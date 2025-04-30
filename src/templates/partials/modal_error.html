@@ -1,9 +1,19 @@
-{# Wyświetla błąd w strukturze modala #}
+{# src/templates/partials/modal_error.html #} {# This partial template renders
+the standard content structure (header, body, footer) for a Bootstrap modal,
+specifically designed to display an error message. It expects optional context
+variables: - 'error_title': The text to display in the modal header. -
+'error_message': The text to display in the modal body. #} {# Modal Header
+Section #}
 <div class="modal-header">
+  {# Modal Title: Uses Bootstrap's 'text-danger' class for styling. #}
   <h5 class="modal-title text-danger">
-    <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error_title |
-    default('Błąd') }}
+    {# Includes a Bootstrap Icon for visual emphasis of the error state. #}
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+    {# Displays the provided 'error_title' context variable. If 'error_title' is
+    not provided, it defaults to 'Error'. #} {{ error_title | default('Error')
+    }}
   </h5>
+  {# Standard Bootstrap close button ('x') in the header. #}
   <button
     type="button"
     class="btn-close"
@@ -11,13 +21,21 @@
     aria-label="Close"
   ></button>
 </div>
+
+{# Modal Body Section #}
 <div class="modal-body">
+  {# Paragraph containing the main error message, styled with 'text-danger'. #}
   <p class="text-danger">
-    {{ error_message | default('Wystąpił nieoczekiwany błąd.') }}
+    {# Displays the provided 'error_message' context variable. If
+    'error_message' is not provided, it defaults to a generic error message. #}
+    {{ error_message | default('An unexpected error occurred.') }}
   </p>
 </div>
+
+{# Modal Footer Section #}
 <div class="modal-footer">
+  {# A standard 'Close' button that dismisses the modal when clicked. #}
   <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-    Zamknij
+    Close
   </button>
 </div>

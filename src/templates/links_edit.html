@@ -1,216 +1,176 @@
-<edit
-  >{% extends "base.html" %} {% block title %}Edycja Linku - routr{% endblock %}
-  {% block navbar %} {% include "partials/navbar.html" %} {% endblock %} {%
-  block content %}
-  <div class="container mt-4">
-    {# Kontener na dane nagłówka - ładowane przez HTMX #}
-    <div
-      id="link-header-container"
-      hx-get="/api/v1/links/{{ link_id }}/edit-header-partial"
-      hx-trigger="load"
-      hx-swap="innerHTML"
-      hx-target="this"
-      hx-indicator="#link-header-loading-indicator"
-    >
-      {# Wskaźnik ładowania dla nagłówka #}
-      <div id="link-header-loading-indicator" class="text-center p-4">
-        <div class="spinner-border text-primary" role="status">
-          <span class="visually-hidden">Ładowanie danych linku...</span>
-        </div>
-        <p class="text-muted mt-2">Ładowanie danych linku...</p>
-      </div>
-    </div>
+{# src/templates/links_edit.html #}
 
-    {# Zakładki dla Reguł i Statystyk #}
-    <ul class="nav nav-tabs mb-3" id="linkEditTabs" role="tablist">
-      <li class="nav-item" role="presentation">
-        <button
-          class="nav-link active"
-          id="rules-tab-button"
-          data-bs-toggle="tab"
-          data-bs-target="#rules-tab-pane"
-          type="button"
-          role="tab"
-          aria-controls="rules-tab-pane"
-          aria-selected="true"
-        >
-          <i class="bi bi-list-ul me-1"></i> Reguły Przekierowań
-        </button>
-      </li>
-      <li class="nav-item" role="presentation">
-        <button
-          class="nav-link"
-          id="stats-tab-button"
-          data-bs-toggle="tab"
-          data-bs-target="#stats-tab-pane"
-          type="button"
-          role="tab"
-          aria-controls="stats-tab-pane"
-          aria-selected="false"
-        >
-          <i class="bi bi-bar-chart-line me-1"></i> Statystyki
-        </button>
-      </li>
-    </ul>
-    <div class="tab-content" id="linkEditTabsContent">
-      {# --- Zakładka Reguły --- #}
-      <div
-        class="tab-pane fade show active"
-        id="rules-tab-pane"
-        role="tabpanel"
-        aria-labelledby="rules-tab-button"
-        tabindex="0"
-      >
-        {# Kontener na reguły - ładowany przy aktywacji zakładki #}
-        <div
-          id="rules-content-area"
-          hx-get="/api/v1/links/{{ link_id }}/rules/list-partial"
-          hx-trigger="loadRules from:body"
-          {#
-          Czeka
-          na
-          niestandardowy
-          trigger
-          #}
-          hx-swap="innerHTML"
-          hx-indicator="#rules-loading-indicator"
-          {#
-          Poprawne
-          id
-          #}
-          hx-target="this"
-        >
-          {# Wskaźnik ładowania dla reguł #}
-          <div
-            id="rules-loading-indicator"
-            class="htmx-indicator text-center p-4"
-          >
-            {# Poprawne ID #}
-            <div class="spinner-border text-secondary" role="status">
-              <span class="visually-hidden">Ładowanie reguł...</span>
-            </div>
-            <p class="text-muted mt-2">Ładowanie reguł...</p>
-          </div>
-        </div>
-      </div>
+{% extends "base.html" %} {# Inherit base structure, styles, scripts #}
 
-      {# --- Zakładka Statystyki --- #}
-      <div
-        class="tab-pane fade"
-        id="stats-tab-pane"
-        role="tabpanel"
-        aria-labelledby="stats-tab-button"
-        tabindex="0"
-      >
-        {# Kontener na statystyki - ładowany przy aktywacji zakładki #}
-        <div
-          id="stats-content-area"
-          hx-get="/api/v1/links/{{ link_id }}/stats-partial"
-          hx-trigger="loadStats from:body"
-          {#
-          Czeka
-          na
-          niestandardowy
-          trigger
-          #}
-          hx-swap="innerHTML"
-          hx-indicator="#stats-loading-indicator"
-          {#
-          Poprawne
-          id
-          #}
-          hx-target="this"
-        >
-          {# Wskaźnik ładowania dla statystyk #}
-          <div
-            id="stats-loading-indicator"
-            class="htmx-indicator text-center p-4"
-          >
-            {# Poprawne ID #}
-            <div class="spinner-border text-secondary" role="status">
-              <span class="visually-hidden">Ładowanie statystyk...</span>
-            </div>
-            <p class="text-muted mt-2">Ładowanie statystyk...</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  {# Koniec kontenera głównego #} {# --- Modal Potwierdzenia Usunięcia (jeśli
-  nie ma go w base.html) --- #} {# Lepiej umieścić go raz w base.html, ale jeśli
-  jest tylko tutaj, to OK #}
+{# --- Page Title Block --- #}
+{% block title %}Edit Link - routr{% endblock %}
+
+{# --- Navbar Block --- #}
+{# Include the standard application navbar partial #}
+{% block navbar %}
+  {% include "partials/navbar.html" %}
+{% endblock %}
+
+{# --- Main Content Block --- #}
+{% block content %}
+<div class="container mt-4"> {# Main container with top margin #}
+
+  {# Container for the Link Header section (alias display, default URL form) #}
+  {# This content is loaded dynamically via HTMX when the page loads. #}
   <div
-    class="modal fade"
-    id="confirmDeleteModal"
-    tabindex="-1"
-    aria-labelledby="confirmDeleteModalLabel"
-    aria-hidden="true"
+    id="link-header-container"
+    hx-get="/api/v1/links/{{ link_id }}/edit-header-partial" {# HTMX: URL to fetch the header content #}
+    hx-trigger="load" {# HTMX: Trigger the request immediately on page load #}
+    hx-swap="innerHTML" {# HTMX: Replace the content of this div with the response #}
+    hx-target="this" {# HTMX: The target for the swap is this div itself #}
+    hx-indicator="#link-header-loading-indicator" {# HTMX: Show the specified loading indicator during the request #}
   >
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="confirmDeleteModalLabel">
-            Potwierdź usunięcie
-          </h5>
-          <button
-            type="button"
-            class="btn-close"
-            data-bs-dismiss="modal"
-            aria-label="Close"
-          ></button>
-        </div>
-        <div class="modal-body">
-          Czy na pewno chcesz usunąć ten element? Tej operacji nie można cofnąć.
-        </div>
-        <div class="modal-footer">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            data-bs-dismiss="modal"
-          >
-            Anuluj
-          </button>
-          <button type="button" class="btn btn-danger" id="confirmDeleteButton">
-            Usuń
-          </button>
-          {# Logika HTMX dodawana przez JS z base.html lub partiala listy #}
-        </div>
+    {# Loading indicator displayed while the header content is being fetched #}
+    <div id="link-header-loading-indicator" class="text-center p-4">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading link data...</span>
       </div>
+      <p class="text-muted mt-2">Loading link data...</p>
     </div>
   </div>
 
-  {% endblock %} {% block scripts %} {# --- Skrypt do wyzwalania ładowania
-  zawartości zakładek --- #}
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const rulesTabButton = document.getElementById("rules-tab-button");
-      const statsTabButton = document.getElementById("stats-tab-button");
+  {# --- Tabs for Rules and Statistics --- #}
+  {# Standard Bootstrap Tabs component #}
+  <ul class="nav nav-tabs mb-3" id="linkEditTabs" role="tablist">
+    {# Rules Tab Button #}
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" {# Initially active #}
+              id="rules-tab-button"
+              data-bs-toggle="tab" {# Bootstrap JS hook #}
+              data-bs-target="#rules-tab-pane" {# Links button to the pane #}
+              type="button" role="tab" aria-controls="rules-tab-pane" aria-selected="true">
+        <i class="bi bi-list-ul me-1"></i> Routing Rules
+      </button>
+    </li>
+    {# Statistics Tab Button #}
+    <li class="nav-item" role="presentation">
+      <button class="nav-link"
+              id="stats-tab-button"
+              data-bs-toggle="tab" {# Bootstrap JS hook #}
+              data-bs-target="#stats-tab-pane" {# Links button to the pane #}
+              type="button" role="tab" aria-controls="stats-tab-pane" aria-selected="false">
+        <i class="bi bi-bar-chart-line me-1"></i> Statistics
+      </button>
+    </li>
+  </ul>
 
-      // Wyzwól ładowanie dla domyślnie aktywnej zakładki (Reguły) zaraz po załadowaniu strony
-      setTimeout(() => {
-        console.log(
-          "Triggering initial load for Rules tab from links_edit.html"
-        );
+  {# Tab Content Area #}
+  <div class="tab-content" id="linkEditTabsContent">
+
+    {# --- Rules Tab Pane --- #}
+    {# Content area for the Routing Rules, initially visible ('show active') #}
+    <div class="tab-pane fade show active" id="rules-tab-pane" role="tabpanel" aria-labelledby="rules-tab-button" tabindex="0">
+      {# Container where the rules list partial will be loaded via HTMX. #}
+      <div
+        id="rules-content-area"
+        hx-get="/api/v1/links/{{ link_id }}/rules/list-partial" {# HTMX: URL to fetch the rules list #}
+        hx-trigger="loadRules from:body" {# HTMX: Triggered by a custom 'loadRules' event dispatched on the body #}
+        hx-swap="innerHTML" {# HTMX: Replace content of this div #}
+        hx-indicator="#rules-loading-indicator" {# HTMX: Show the rules loading spinner #}
+        hx-target="this" {# HTMX: Target this div itself #}
+      >
+        {# Loading indicator for the rules list #}
+        <div id="rules-loading-indicator" class="htmx-indicator text-center p-4">
+          <div class="spinner-border text-secondary" role="status">
+            <span class="visually-hidden">Loading rules...</span>
+          </div>
+          <p class="text-muted mt-2">Loading rules...</p>
+        </div>
+      </div> {# End rules-content-area #}
+    </div> {# End rules-tab-pane #}
+
+    {# --- Statistics Tab Pane --- #}
+    {# Content area for Statistics, initially hidden ('fade') #}
+    <div class="tab-pane fade" id="stats-tab-pane" role="tabpanel" aria-labelledby="stats-tab-button" tabindex="0">
+      {# Container where the statistics partial will be loaded via HTMX. #}
+      <div
+        id="stats-content-area"
+        hx-get="/api/v1/links/{{ link_id }}/stats-partial" {# HTMX: URL to fetch the stats content #}
+        hx-trigger="loadStats from:body" {# HTMX: Triggered by a custom 'loadStats' event dispatched on the body #}
+        hx-swap="innerHTML" {# HTMX: Replace content of this div #}
+        hx-indicator="#stats-loading-indicator" {# HTMX: Show the stats loading spinner #}
+        hx-target="this" {# HTMX: Target this div itself #}
+      >
+        {# Loading indicator for the statistics content #}
+        <div id="stats-loading-indicator" class="htmx-indicator text-center p-4">
+          <div class="spinner-border text-secondary" role="status">
+            <span class="visually-hidden">Loading statistics...</span>
+          </div>
+          <p class="text-muted mt-2">Loading statistics...</p>
+        </div>
+      </div> {# End stats-content-area #}
+    </div> {# End stats-tab-pane #}
+
+  </div> {# End linkEditTabsContent #}
+</div> {# End container #}
+
+{# --- Confirmation Modal for Deletion --- #}
+{# This is a generic Bootstrap modal structure. It's assumed that JavaScript
+   (either global or loaded with the list partials) will handle transferring
+   the necessary HTMX attributes (hx-delete, hx-target) from the clicked
+   delete button to the modal's confirmation button (#confirmDeleteButton). #}
+<div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-labelledby="confirmDeleteModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmDeleteModalLabel">Confirm Deletion</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        Are you sure you want to delete this item? This action cannot be undone.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        {# The actual confirmation button. HTMX attributes are added dynamically via JS. #}
+        <button type="button" class="btn btn-danger" id="confirmDeleteButton">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {# End content block #}
+
+{# --- Page-Specific Scripts Block --- #}
+{% block scripts %}
+{# JavaScript to trigger HTMX loading of tab content when tabs are shown. #}
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const rulesTabButton = document.getElementById("rules-tab-button");
+    const statsTabButton = document.getElementById("stats-tab-button");
+
+    // Trigger the load for the initially active tab (Rules) shortly after the DOM is ready.
+    // A small delay can sometimes help ensure HTMX is fully initialized.
+    setTimeout(() => {
+      console.log("Triggering initial load for Rules tab from links_edit.html"); // MVP Log
+      htmx.trigger(document.body, "loadRules", {}); // Dispatch the custom event HTMX is listening for.
+    }, 100); // Small delay in milliseconds.
+
+    // Listen for Bootstrap's 'show.bs.tab' event on the Rules tab button.
+    if (rulesTabButton) {
+      rulesTabButton.addEventListener("show.bs.tab", (event) => {
+        console.log("Rules tab shown, triggering loadRules"); // MVP Log
+        // Trigger the custom event to load/refresh the rules list content.
         htmx.trigger(document.body, "loadRules", {});
-      }, 100); // Niewielkie opóźnienie
+      });
+    }
 
-      // Nasłuchuj na zdarzenie Bootstrapa pokazania zakładki
-      if (rulesTabButton) {
-        rulesTabButton.addEventListener("show.bs.tab", (event) => {
-          console.log("Rules tab shown, triggering loadRules");
-          htmx.trigger(document.body, "loadRules", {});
-        });
-      }
+    // Listen for Bootstrap's 'show.bs.tab' event on the Stats tab button.
+    if (statsTabButton) {
+      statsTabButton.addEventListener("show.bs.tab", (event) => {
+        console.log("Stats tab shown, triggering loadStats"); // MVP Log
+        // Trigger the custom event to load/refresh the statistics content.
+        htmx.trigger(document.body, "loadStats", {});
+      });
+    }
+  });
+</script>
+{# --- End Tab Loading Script --- #}
 
-      if (statsTabButton) {
-        statsTabButton.addEventListener("show.bs.tab", (event) => {
-          console.log("Stats tab shown, triggering loadStats");
-          htmx.trigger(document.body, "loadStats", {});
-        });
-      }
-    });
-  </script>
-  {# --- Koniec skryptu dla zakładek --- #} {# --- Inne skrypty specyficzne dla
-  tej strony (jeśli będą) --- #} {# Np. logika modala edycji reguł może być
-  ładowana z partialem formularza #} {% endblock %}
-</edit>
+{# Other scripts specific to this page could be added here.
+   For example, logic related to the rule editing modal might be loaded
+   dynamically with the rule form partial itself (rule_form.html). #}
+{% endblock %} {# End scripts block #}

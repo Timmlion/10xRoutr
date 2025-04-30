@@ -1,35 +1,50 @@
 # src/schemas/stats.py
-from pydantic import BaseModel, UUID4, Field  # <<< DODANO Field
+from pydantic import BaseModel, UUID4, Field
 from typing import List, Optional
 
-# Zakładając, że enums.py jest w tym samym folderze 'schemas'
-# użyj kropki dla importu względnego
+# Relative import of Enums from the same directory
 from .enums import TargetTypeEnum
+
+# This module defines Pydantic schemas related to statistics,
+# primarily for representing click data associated with links and their rules.
 
 
 class TargetClickStat(BaseModel):
-    """Schema representing click stats for a specific rule's target."""
+    """
+    Represents click statistics specifically attributed to a single routing rule's target.
+    This helps break down the total clicks by which rule was matched.
+    """
 
-    rule_id: UUID4 = Field(description="ID of the rule that led to these clicks.")
+    rule_id: UUID4 = Field(
+        description="The unique identifier of the rule responsible for these clicks."
+    )
     target_type: TargetTypeEnum = Field(
-        description="The type of the target ('url' or 'html')."
+        description="Indicates whether the rule's target was a URL or HTML content."
     )
+    # Provides context about the target without necessarily including the full HTML content.
     target_value_preview: str = Field(
-        description="The target URL or a placeholder/preview for HTML content."
+        description="The target URL, or a preview/placeholder if the target was HTML content."
     )
+    # This count is specific to this rule, distinct from the link's total clicks.
     current_clicks: int = Field(
-        description="Number of clicks recorded for this specific rule."
+        description="Number of clicks recorded specifically for this rule's target."
     )
 
 
 class LinkStatsResponse(BaseModel):
-    """Schema for the response containing statistics for a link."""
+    """
+    Schema defining the structure for the response containing aggregated click statistics for a specific link.
+    """
 
-    link_id: UUID4 = Field(description="ID of the link these stats belong to.")
-    alias: str = Field(description="Alias of the link.")
-    total_clicks: int = Field(
-        description="Total number of clicks recorded for the link alias."
+    link_id: UUID4 = Field(
+        description="The unique identifier of the link these statistics pertain to."
     )
+    alias: str = Field(description="The alias (path segment) of the link.")
+    # Represents all clicks hitting the link's alias, regardless of which rule (or default) handled it.
+    total_clicks: int = Field(
+        description="The overall total number of clicks recorded for this link's alias."
+    )
+    # Provides a breakdown of clicks per specific rule target.
     target_clicks: List[TargetClickStat] = Field(
-        description="List of click counts for each rule's target."
+        description="A list detailing the click counts for each individual rule's target associated with this link."
     )

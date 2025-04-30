@@ -1,164 +1,158 @@
+{# src/templates/partials/rule_rows.html #}
+{#
+  This partial template renders the table displaying the routing rules for a specific link.
+  It includes a button to add a new rule and the structure for a modal dialog
+  where the rule creation/edit form will be loaded via HTMX.
+
+  Expected Jinja2 context variables:
+  - link_id: The UUID of the parent link.
+  - rules: A list of RuleResponse objects for the link.
+#}
+
+{# "Add New Rule" Button: Triggers loading the create form into the modal #}
 <button
   class="btn btn-success mb-3"
-  hx-get="/api/v1/links/{{ link_id }}/rules/create-form-partial"
-  hx-target="#modal-placeholder"
-  hx-swap="innerHTML"
-  data-bs-toggle="modal"
-  data-bs-target="#ruleEditModal"
-  hx-indicator=""
+  hx-get="/api/v1/links/{{ link_id }}/rules/create-form-partial" {# HTMX: Fetch the empty form partial #}
+  hx-target="#modal-placeholder" {# HTMX: Place the fetched form inside the modal's placeholder div #}
+  hx-swap="innerHTML" {# HTMX: Replace the content of the target #}
+  data-bs-toggle="modal" {# Bootstrap: Trigger the modal display #}
+  data-bs-target="#ruleEditModal" {# Bootstrap: Specifies which modal to show #}
+  hx-indicator="" {# Optional: Can specify a loading indicator if needed #}
 >
-  <i class="bi bi-plus-lg me-1"></i> Dodaj Nową Regułę
+  <i class="bi bi-plus-lg me-1"></i> Add New Rule
 </button>
 
-{% if rules %}
-<div class="table-responsive">
-  <table class="table table-hover align-middle">
-    <thead>
-      <tr>
-        <th scope="col" style="width: 5%">Priorytet</th>
-        <th scope="col" style="width: 15%">Typ Reguły</th>
-        <th scope="col">Cel / Warunek</th>
-        <th scope="col" style="width: 15%" class="text-center">
-          Aktualne Kliknięcia
-        </th>
-        <th scope="col" style="width: 15%" class="text-end">Akcje</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for rule in rules %}
-      <tr id="rule-row-{{ rule.id }}">
-        {# Dodajemy ID dla łatwiejszego targetowania #}
-        <td class="fw-bold">{{ rule.priority }}</td>
-        <td>
-          {% if rule.rule_type == 'time' %}
-          <i class="bi bi-calendar-event me-1" title="Reguła czasowa"></i>
-          Czasowa {% elif rule.rule_type == 'clicks' %}
-          <i class="bi bi-mouse me-1" title="Reguła ilościowa"></i> Ilościowa {%
-          else %} {{ rule.rule_type }} {% endif %}
-        </td>
-        <td>
-          {# Cel #}
-          <span class="d-block fw-bold">
-            {% if rule.target_type == 'url' %}
-            <i class="bi bi-link-45deg me-1" title="Cel: URL"></i>
-            <a
-              href="{{ rule.target_value }}"
-              target="_blank"
-              title="{{ rule.target_value }}"
-            >
-              {# Skrócony URL dla czytelności #} {{ rule.target_value |
-              truncate(50, True) }}
-            </a>
-            {% elif rule.target_type == 'html' %}
-            <i class="bi bi-filetype-html me-1" title="Cel: Własny HTML"></i>
-            Własny HTML {% else %} {{ rule.target_value }} {% endif %}
-          </span>
-          {# Warunek #}
-          <small class="text-muted d-block">
-            {% if rule.rule_type == 'time' %} Ważna od: {{
-            rule.start_time.strftime('%Y-%m-%d %H:%M') if rule.start_time else
-            '?' }} UTC
-            <br />
-            Ważna do: {{ rule.end_time.strftime('%Y-%m-%d %H:%M') if
-            rule.end_time else '?' }} UTC {% elif rule.rule_type == 'clicks' %}
-            Limit kliknięć: {{ rule.max_clicks }} {% endif %}
-          </small>
-        </td>
-        <td class="text-center">
-          {% if rule.rule_type == 'clicks' %} {{ rule.current_clicks }} / {{
-          rule.max_clicks }} {% else %} {{ rule.current_clicks }} {% endif %}
-        </td>
-        <td class="text-end">
-          <button
-            class="btn btn-sm btn-outline-primary me-1"
-            title="Edytuj Regułę"
-            hx-get="/api/v1/links/{{ link_id }}/rules/{{ rule.id }}/edit-form-partial"
-            {#
-            Endpoint
-            zwracający
-            formularz
-            edycji
-            #}
-            hx-target="#modal-placeholder"
-            hx-swap="innerHTML"
-            data-bs-toggle="modal"
-            data-bs-target="#ruleEditModal"
-          >
-            <i class="bi bi-pencil-square"></i>
-          </button>
-          <button
-            class="btn btn-sm btn-outline-danger delete-rule-button"
-            title="Usuń Regułę"
-            {#
-            Atrybuty
-            dla
-            modala
-            potwierdzającego
-            #}
-            data-bs-toggle="modal"
-            data-bs-target="#confirmDeleteModal"
-            {#
-            Atrybuty
-            HTMX
-            kopiowane
-            przez
-            JS
-            do
-            modala
-            #}
-            hx-delete="/api/v1/links/{{ link_id }}/rules/{{ rule.id }}"
-            hx-target="#rule-row-{{ rule.id }}"
-            {#
-            Celujemy
-            w
-            wiersz
-            tabeli
-            #}
-            hx-swap="outerHTML"
-          >
-            {# Usuwamy cały wiersz #}
-            <i class="bi bi-trash"></i>
-          </button>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+{% if rules %} {# Check if there are any rules to display #}
+  <div class="table-responsive"> {# Ensure table scrolls horizontally on small screens #}
+    <table class="table table-hover align-middle"> {# Bootstrap table styling #}
+      <thead>
+        <tr>
+          {# Table Headers #}
+          <th scope="col" style="width: 5%">Prio.</th> {# Abbreviated for space #}
+          <th scope="col" style="width: 15%">Rule Type</th>
+          <th scope="col">Target / Condition</th> {# Combined column for target and conditions #}
+          <th scope="col" style="width: 15%" class="text-center">Current Clicks</th>
+          <th scope="col" style="width: 15%" class="text-end">Actions</th> {# Right-aligned actions #}
+        </tr>
+      </thead>
+      <tbody>
+        {% for rule in rules %} {# Loop through each rule object #}
+          {# Assign a unique ID to each table row for easier targeting (e.g., by delete action) #}
+          <tr id="rule-row-{{ rule.id }}">
+            {# Priority Column #}
+            <td class="fw-bold">{{ rule.priority }}</td>
+
+            {# Rule Type Column: Display type with an icon #}
+            <td>
+              {% if rule.rule_type == 'time' %}
+                <i class="bi bi-calendar-event me-1" title="Time-based Rule"></i> Time
+              {% elif rule.rule_type == 'clicks' %}
+                <i class="bi bi-mouse me-1" title="Clicks-based Rule"></i> Clicks
+              {% else %}
+                {{ rule.rule_type }} {# Fallback for unknown types #}
+              {% endif %}
+            </td>
+
+            {# Target / Condition Column: Display target info and rule conditions concisely #}
+            <td>
+              {# Target Information (URL or HTML) #}
+              <span class="d-block fw-bold"> {# Makes the target info prominent #}
+                {% if rule.target_type == 'url' %}
+                  <i class="bi bi-link-45deg me-1" title="Target: URL"></i>
+                  <a href="{{ rule.target_value }}" target="_blank" title="{{ rule.target_value }}">
+                    {# Display truncated URL #}
+                    {{ rule.target_value | truncate(50, True) }}
+                  </a>
+                {% elif rule.target_type == 'html' %}
+                  <i class="bi bi-filetype-html me-1" title="Target: Custom HTML"></i> Custom HTML
+                {% else %}
+                  {{ rule.target_value }} {# Fallback #}
+                {% endif %}
+              </span>
+              {# Condition Information (Time range or Click limit) #}
+              <small class="text-muted d-block"> {# Secondary info in smaller, muted text #}
+                {% if rule.rule_type == 'time' %}
+                  Active From: {{ rule.start_time.strftime('%Y-%m-%d %H:%M') if rule.start_time else '?' }} UTC
+                  <br />
+                  Active Until: {{ rule.end_time.strftime('%Y-%m-%d %H:%M') if rule.end_time else '?' }} UTC
+                {% elif rule.rule_type == 'clicks' %}
+                  Click Limit: {{ rule.max_clicks }}
+                {% endif %}
+              </small>
+            </td>
+
+            {# Current Clicks Column: Display progress for clicks-based rules #}
+            <td class="text-center">
+              {% if rule.rule_type == 'clicks' %}
+                {{ rule.current_clicks }} / {{ rule.max_clicks }} {# Show current vs max #}
+              {% else %}
+                {{ rule.current_clicks }} {# Show total clicks for time-based rules #}
+              {% endif %}
+            </td>
+
+            {# Actions Column: Edit and Delete buttons #}
+            <td class="text-end">
+              {# Edit Button: Loads the edit form into the modal #}
+              <button
+                class="btn btn-sm btn-outline-primary me-1"
+                title="Edit Rule"
+                hx-get="/api/v1/links/{{ link_id }}/rules/{{ rule.id }}/edit-form-partial" {# HTMX: Fetch the pre-filled edit form #}
+                hx-target="#modal-placeholder" {# HTMX: Target the modal's content area #}
+                hx-swap="innerHTML" {# HTMX: Replace the content #}
+                data-bs-toggle="modal" {# Bootstrap: Trigger the modal #}
+                data-bs-target="#ruleEditModal" {# Bootstrap: Target the specific modal #}
+              >
+                <i class="bi bi-pencil-square"></i>
+              </button>
+              {# Delete Button: Triggers confirmation modal, then HTMX delete #}
+              <button
+                class="btn btn-sm btn-outline-danger delete-rule-button"
+                title="Delete Rule"
+                data-bs-toggle="modal" {# Bootstrap: Trigger confirmation modal #}
+                data-bs-target="#confirmDeleteModal" {# Bootstrap: Target the confirmation modal ID #}
+                {# HTMX attributes will likely be transferred to the confirmation button in the modal via JavaScript #}
+                hx-delete="/api/v1/links/{{ link_id }}/rules/{{ rule.id }}" {# HTMX: The actual delete request URL #}
+                hx-target="#rule-row-{{ rule.id }}" {# HTMX: Target this table row #}
+                hx-swap="outerHTML" {# HTMX: Remove the entire row upon successful deletion (2xx response) #}
+              >
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 {% else %}
-<div class="alert alert-info text-center" role="alert">
-  <i class="bi bi-info-circle me-1"></i> Nie zdefiniowano jeszcze żadnych reguł
-  dla tego linku.
-</div>
-{% endif %} {# Modal do edycji/tworzenia reguł - zawartość ładowana przez HTMX
-#}
-<div
-  class="modal fade"
-  id="ruleEditModal"
-  tabindex="-1"
-  aria-labelledby="ruleEditModalLabel"
-  aria-hidden="true"
->
-  <div class="modal-dialog modal-lg">
-    {# Zwiększamy rozmiar modala #}
+  {# Message displayed if no rules are defined for this link #}
+  <div class="alert alert-info text-center" role="alert">
+    <i class="bi bi-info-circle me-1"></i> No rules have been defined for this link yet.
+  </div>
+{% endif %}
+
+{# --- Modal Structure for Editing/Creating Rules --- #}
+{# This modal is initially empty (or shows a loading state).
+   The actual form content is loaded into '#modal-placeholder' via HTMX
+   when the 'Add New Rule' or 'Edit Rule' buttons are clicked. #}
+<div class="modal fade" id="ruleEditModal" tabindex="-1" aria-labelledby="ruleEditModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg"> {# Use a larger modal size for the form #}
     <div class="modal-content">
-      {# Miejsce na wstawienie formularza przez HTMX #}
+      {# This div serves as the target for HTMX to load the rule form partial into. #}
       <div id="modal-placeholder">
+        {# Initial loading state content (optional, but good UX) #}
         <div class="modal-header">
-          <h5 class="modal-title" id="ruleEditModalLabel">
-            Ładowanie formularza...
-          </h5>
-          <button
-            type="button"
-            class="btn-close"
-            data-bs-dismiss="modal"
-            aria-label="Close"
-          ></button>
+          <h5 class="modal-title" id="ruleEditModalLabel">Loading Form...</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <div class="text-center p-4"><div class="spinner-border"></div></div>
+          <div class="text-center p-4">
+            <div class="spinner-border" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+          </div>
         </div>
-      </div>
+        {# End initial loading state #}
+      </div> {# End #modal-placeholder #}
     </div>
   </div>
 </div>

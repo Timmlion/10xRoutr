@@ -1,137 +1,151 @@
-{% extends "base.html" %} {% block title %}Utwórz Nowy Link - routr{% endblock
-%} {% block navbar %} {% include "partials/navbar.html" %} {% endblock %} {%
-block content %}
-<div class="container mt-4">
-  <h1 class="mb-4">Utwórz Nowy Link routr</h1>
+{# src/templates/links_create.html #}
 
-  <div class="row">
-    <div class="col-md-8 col-lg-6">
-      {# Miejsce na komunikaty o błędach Z TEGO formularza #}
+{% extends "base.html" %} {# Inherit base structure, styles, scripts #}
+
+{# --- Page Title Block --- #}
+{% block title %}Create New Link - routr{% endblock %}
+
+{# --- Navbar Block --- #}
+{# Include the standard application navbar #}
+{% block navbar %}
+  {% include "partials/navbar.html" %}
+{% endblock %}
+
+{# --- Main Content Block --- #}
+{% block content %}
+<div class="container mt-4"> {# Standard Bootstrap container with top margin #}
+  <h1 class="mb-4">Create New routr Link</h1>
+
+  <div class="row"> {# Bootstrap row for layout #}
+    <div class="col-md-8 col-lg-6"> {# Limit form width on medium/large screens #}
+
+      {# Dedicated area for displaying success/error messages specifically from this form submission #}
       <div id="create-link-message-area" class="mb-3"></div>
 
+      {# Form for creating a new link. Submits via HTMX. #}
       <form
         id="create-link-form"
-        hx-post="/api/v1/links"
-        hx-target="#create-link-message-area"
-        hx-swap="innerHTML"
-        {#
-        hx-encoding
-        i
-        hx-ext
-        USUNIĘTE
-        #}
+        hx-post="/api/v1/links" {# HTMX: Send POST request to the link creation API endpoint #}
+        hx-target="#create-link-message-area" {# HTMX: Target the message area above for error responses #}
+        hx-swap="innerHTML" {# HTMX: Replace the content of the target with the response (used for errors) #}
+        {# NOTE: On success (201 Created), the API endpoint is expected to send back
+               an 'HX-Redirect' header, which HTMX will handle automatically, navigating
+               to the specified URL (e.g., the edit page for the new link).
+               The hx-target/hx-swap are primarily for displaying validation/error messages
+               if the creation fails *before* a redirect occurs. #}
+        {# hx-encoding and hx-ext were removed as they are often not needed for simple form posts #}
       >
+        {# Alias Input Field (Required) #}
         <div class="mb-3">
-          <label for="alias" class="form-label"
-            >Alias <span class="text-danger">*</span></label
-          >
-          <div class="input-group">
-            <span class="input-group-text" id="alias-prefix"
-              >http://localhost:8000/</span
-            >
+          <label for="alias" class="form-label">Alias <span class="text-danger">*</span></label>
+          <div class="input-group"> {# Bootstrap input group to prepend base URL #}
+            {# Display the base URL prefix - IMPORTANT: This should be dynamic, not hardcoded!
+               Pass the base URL from the request context in the FastAPI endpoint. #}
+            <span class="input-group-text" id="alias-prefix">http://localhost:8000/</span>
             <input
               type="text"
               class="form-control"
               id="alias"
-              name="alias"
-              required
-              pattern="^[a-z0-9-]+$"
-              minlength="3"
-              maxlength="64"
-              aria-describedby="aliasHelp alias-prefix"
+              name="alias" {# The name attribute used by form submission #}
+              required {# HTML5 required attribute #}
+              pattern="^[a-z0-9-]+$" {# HTML5 pattern validation (matches allowed characters) #}
+              minlength="3" {# HTML5 minimum length validation #}
+              maxlength="64" {# HTML5 maximum length validation #}
+              aria-describedby="aliasHelp alias-prefix" {# Accessibility attributes #}
             />
           </div>
-          <div id="aliasHelp" class="form-text">
-            Unikalna nazwa Twojego linku. Tylko małe litery, cyfry i myślniki.
-            Długość 3-64 znaki.
+          <div id="aliasHelp" class="form-text"> {# Help text for the user #}
+            Unique name for your link. Only lowercase letters, numbers, and hyphens. Length 3-64 characters.
           </div>
         </div>
 
+        {# Default URL Input Field (Optional) #}
         <div class="mb-3">
-          <label for="default_url" class="form-label"
-            >Domyślny URL Przekierowania (Opcjonalnie)</label
-          >
+          <label for="default_url" class="form-label">Default Redirect URL (Optional)</label>
           <input
-            type="url"
+            type="url" {# HTML5 URL type validation #}
             class="form-control"
             id="default_url"
-            name="default_url"
-            placeholder="https://twoja-strona.com/fallback"
+            name="default_url" {# Name attribute for submission #}
+            placeholder="https://your-site.com/fallback"
           />
           <div id="defaultUrlHelp" class="form-text">
-            URL, na który użytkownik zostanie przekierowany, jeśli żadna reguła
-            nie zostanie dopasowana. Puste pole oznacza brak domyślnego
-            przekierowania.
+            URL the user is redirected to if no rules match. Leave empty for no default redirect.
           </div>
         </div>
 
-        <button type="submit" class="btn btn-primary">Utwórz Link</button>
-        <a
-          href="{{ url_for('render_dashboard') }}"
-          class="btn btn-secondary ms-2"
-          >Anuluj</a
-        >
+        {# Form Action Buttons #}
+        <button type="submit" class="btn btn-primary">Create Link</button>
+        {# Cancel button links back to the dashboard #}
+        <a href="{{ url_for('render_dashboard') }}" class="btn btn-secondary ms-2">Cancel</a>
       </form>
-    </div>
-  </div>
-</div>
-{% endblock %} {% block scripts %} {# Pozostaje tylko skrypt do obsługi
-odpowiedzi (błędów lub sukcesu bez przekierowania) #}
+
+    </div> {# End col #}
+  </div> {# End row #}
+</div> {# End container #}
+{% endblock %}
+
+{# --- Page-Specific Scripts Block --- #}
+{% block scripts %}
+{# JavaScript to handle HTMX response events specifically for this form #}
 <script>
-  document.body.addEventListener("htmx:beforeSwap", function (evt) {
-    if (
-      evt.detail.target.id === "create-link-message-area" &&
-      !evt.detail.isSuccess
-    ) {
+  // Listen for the 'htmx:beforeSwap' event, which allows modifying or preventing the swap.
+  document.body.addEventListener("htmx:beforeSwap", function(evt) {
+    // Check if the event target is the message area for *this* form and if the request was *not* successful (non-2xx status).
+    if (evt.detail.target.id === "create-link-message-area" && !evt.detail.isSuccess) {
+      // Prevent HTMX from swapping the default error content. We'll create a custom alert.
       evt.preventDefault();
+
       const messageArea = document.getElementById("create-link-message-area");
-      let userFriendlyMessage =
-        "Wystąpił nieznany błąd podczas tworzenia linku.";
+      if (!messageArea) return; // Should exist, but check just in case.
+
+      let userFriendlyMessage = "An unknown error occurred while creating the link."; // Default error message.
+
+      // Try to parse the error response from the server (expected to be JSON).
       try {
         const errorResponse = JSON.parse(evt.detail.xhr.responseText);
-        if (
-          evt.detail.xhr.status === 422 &&
-          errorResponse.detail &&
-          Array.isArray(errorResponse.detail)
-        ) {
-          userFriendlyMessage = "Błąd walidacji danych:<ul>";
-          errorResponse.detail.forEach((err) => {
-            // Prawdopodobnie lokalizacja będzie teraz ['body', 'alias'] lub ['body', 'default_url']
-            const fieldName =
-              err.loc && err.loc.length > 1 ? err.loc[1] : "nieznane pole";
-            const fieldLabel =
-              fieldName === "alias"
-                ? "Alias"
-                : fieldName === "default_url"
-                ? "Domyślny URL"
-                : fieldName;
-            const msg = err.msg || "Nieprawidłowa wartość.";
-            userFriendlyMessage += `<li>Pole '${fieldLabel}': ${msg}</li>`;
+
+        // Handle validation errors (status 422) specifically.
+        if (evt.detail.xhr.status === 422 && errorResponse.detail && Array.isArray(errorResponse.detail)) {
+          userFriendlyMessage = "Validation Error:<ul>";
+          errorResponse.detail.forEach(err => {
+            // Extract field name (expecting ['body', 'field_name']) and message.
+            const fieldName = err.loc && err.loc.length > 1 ? err.loc[1] : "input";
+            // Map internal field name to user-friendly label.
+            const fieldLabel = fieldName === 'alias' ? 'Alias' :
+                               fieldName === 'default_url' ? 'Default URL' :
+                               fieldName; // Fallback to raw name
+            const msg = err.msg || "Invalid value.";
+            userFriendlyMessage += `<li>Field '${fieldLabel}': ${msg}</li>`;
           });
           userFriendlyMessage += "</ul>";
-        } else if (
-          errorResponse.detail &&
-          typeof errorResponse.detail === "string"
-        ) {
-          userFriendlyMessage = errorResponse.detail; // Np. błąd 409 Conflict
-        } else {
-          userFriendlyMessage = `Błąd serwera (status: ${evt.detail.xhr.status}). Spróbuj ponownie.`;
+        }
+        // Handle other errors where 'detail' is a simple string (e.g., 409 Conflict).
+        else if (errorResponse.detail && typeof errorResponse.detail === 'string') {
+          userFriendlyMessage = errorResponse.detail;
+        }
+        // Generic server error message.
+        else {
+          userFriendlyMessage = `Server error (status: ${evt.detail.xhr.status}). Please try again.`;
         }
       } catch (e) {
-        userFriendlyMessage = `Błąd serwera (status: ${evt.detail.xhr.status}). Brak szczegółów.`;
+         // Fallback if parsing the JSON response fails.
+        userFriendlyMessage = `Server error (status: ${evt.detail.xhr.status}). No details available.`;
       }
+
+      // Display the formatted error message in a Bootstrap alert within the message area.
       messageArea.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">
                                     ${userFriendlyMessage}
                                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                                   </div>`;
-    } else if (
-      evt.detail.target.id === "create-link-message-area" &&
-      evt.detail.isSuccess
-    ) {
+    }
+    // If the request was successful (e.g., 201 Created), but targeting the message area.
+    else if (evt.detail.target.id === "create-link-message-area" && evt.detail.isSuccess) {
+      // Clear the message area (optional, as a redirect is expected).
       evt.detail.target.innerHTML = "";
-      console.log(
-        "Create link request successful (201), waiting for HX-Redirect header..."
-      );
+      // Log that success occurred, expecting HTMX to handle the HX-Redirect header sent by the server.
+      console.log("Create link request successful (201), waiting for HX-Redirect header..."); // MVP Log
+      // No further action needed here, HTMX handles the redirect.
     }
   });
 </script>
