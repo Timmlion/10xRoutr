@@ -49,22 +49,40 @@
 │   │   ├── link.py
 │   │   ├── pagination.py
 │   │   ├── rule.py
-│   │   ├── stats.py
-│   │   └── token.py
-│   └── services
-│       ├── __init__.py
-│       ├── __pycache__
-│       │   ├── __init__.cpython-311.pyc
-│       │   ├── auth_service.cpython-311.pyc
-│       │   ├── custom_exceptions.cpython-311.pyc
-│       │   ├── link_service.cpython-311.pyc
-│       │   ├── redirection_service.cpython-311.pyc
-│       │   └── rule_service.cpython-311.pyc
-│       ├── auth_service.py
-│       ├── custom_exceptions.py
-│       ├── link_service.py
-│       ├── redirection_service.py
-│       └── rule_service.py
+│   │   └── stats.py
+│   ├── services
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   │   ├── __init__.cpython-311.pyc
+│   │   │   ├── auth_service.cpython-311.pyc
+│   │   │   ├── custom_exceptions.cpython-311.pyc
+│   │   │   ├── link_service.cpython-311.pyc
+│   │   │   ├── redirection_service.cpython-311.pyc
+│   │   │   └── rule_service.cpython-311.pyc
+│   │   ├── auth_service.py
+│   │   ├── custom_exceptions.py
+│   │   ├── link_service.py
+│   │   ├── redirection_service.py
+│   │   └── rule_service.py
+│   └── templates
+│       ├── base.html
+│       ├── landing_page.html
+│       ├── links_create.html
+│       ├── links_edit.html
+│       ├── links_list.html
+│       ├── login.html
+│       ├── partials
+│       │   ├── link_edit_header.html
+│       │   ├── link_row_error.html
+│       │   ├── link_rows.html
+│       │   ├── link_stats_details.html
+│       │   ├── modal_error.html
+│       │   ├── navbar.html
+│       │   ├── rule_form.html
+│       │   ├── rule_row_error.html
+│       │   ├── rule_rows.html
+│       │   └── stats_error.html
+│       └── register.html
 ├── supabase
 │   └── migrations
 │       ├── 20250413190404_create_initial_routr_schema.sql
@@ -90,4 +108,4 @@
 │       └── test_rule_service.py
 └── tree.txt
 
-26 directories, 65 files
+28 directories, 81 files

@@ -157,9 +157,8 @@
     <footer class="footer mt-auto py-3 bg-light">
       <div class="container text-center">
         <span class="text-muted">
-          {# Copyright text #} © routr {% block year %}{{ now().year if now else
-          '' }}{% endblock %} {# Dynamically insert year if 'now' function
-          available #}
+          {# --- CORRECTED LINE --- #} © routr {% block year %}{{ now.year if
+          now else '' }}{% endblock %} {# --- END CORRECTION --- #}
         </span>
       </div>
     </footer>
@@ -182,57 +181,45 @@
     {# --- Global Application Scripts --- #}
     <script>
       // --- HTMX Request Configuration: Inject Auth Token ---
-      // Listen for the 'htmx:configRequest' event, which fires before HTMX sends a request.
       document.body.addEventListener("htmx:configRequest", function (evt) {
-        const token = sessionStorage.getItem("routr_access_token"); // Get token from storage.
-        // Check if a token exists and the request is targeting an API endpoint.
+        const token = sessionStorage.getItem("routr_access_token");
         if (token && evt.detail.path.startsWith("/api/")) {
-          // Add the Authorization header to the request.
           evt.detail.headers["Authorization"] = "Bearer " + token;
-          console.log(`[HTMX Request] Adding token to ${evt.detail.path}`); // MVP Log
-        }
-        // If no token exists for a protected API call (excluding auth endpoints)...
-        else if (
+          console.log(`[HTMX Request] Adding token to ${evt.detail.path}`);
+        } else if (
           !token &&
           evt.detail.path.startsWith("/api/") &&
-          !evt.detail.path.includes("/auth/") // Allow requests to /api/v1/auth/... without a token
+          !evt.detail.path.includes("/auth/")
         ) {
-          // Prevent the HTMX request and redirect to login.
           console.warn(
             `[HTMX Request] No token found for protected API call: ${evt.detail.path}. Redirecting to login.`
-          ); // MVP Log
-          evt.preventDefault(); // Stop HTMX from sending the request.
-          window.location.href = "{{ url_for('render_login_page') }}"; // Redirect.
+          );
+          evt.preventDefault();
+          window.location.href = "{{ url_for('render_login_page') }}";
         }
       });
 
       // --- HTMX Global Response Error Handling ---
-      // Listen for the 'htmx:responseError' event, which fires when HTMX receives a non-2xx response.
       document.body.addEventListener("htmx:responseError", function (evt) {
-        console.error("HTMX Response Error Event:", evt.detail); // Log the full event detail for debugging.
+        console.error("HTMX Response Error Event:", evt.detail);
 
-        // Handle 401 (Unauthorized) or 403 (Forbidden) errors specifically.
         if (evt.detail.xhr.status === 401 || evt.detail.xhr.status === 403) {
-          // Assume the token is invalid or expired, or permissions are insufficient.
           console.warn(
             `[HTMX Response Error] Received ${evt.detail.xhr.status}. Redirecting to login.`
-          ); // MVP Log
-          sessionStorage.removeItem("routr_access_token"); // Clear the potentially invalid token.
-          window.location.replace("{{ url_for('render_login_page') }}"); // Use replace to avoid history entry.
+          );
+          sessionStorage.removeItem("routr_access_token");
+          window.location.replace("{{ url_for('render_login_page') }}");
         } else {
-          // Handle other errors (e.g., 400, 404, 409, 422, 500).
           const messageArea = document
             .getElementById("global-message-area")
-            ?.querySelector(".col-lg-8"); // Target the inner div for content
+            ?.querySelector(".col-lg-8");
           if (messageArea) {
-            let userFriendlyMessage = "An unexpected error occurred."; // Default message.
+            let userFriendlyMessage = "An unexpected error occurred.";
 
-            // Try to parse the response body as JSON to get detailed error info.
             try {
               const errorResponse = JSON.parse(evt.detail.xhr.responseText);
-              console.log("Parsed Error Response:", errorResponse); // Log parsed error
+              console.log("Parsed Error Response:", errorResponse);
 
-              // Handle FastAPI/Pydantic validation errors (status 422).
               if (
                 evt.detail.xhr.status === 422 &&
                 errorResponse.detail &&
@@ -240,33 +227,25 @@
               ) {
                 userFriendlyMessage = "Validation Error:<ul>";
                 errorResponse.detail.forEach((err) => {
-                  // Attempt to format a helpful message from the error detail structure.
                   const field =
                     err.loc && err.loc.length > 1
                       ? `Field '${err.loc.join(".")}'`
-                      : "Input";
+                      : "Input Error";
                   const msg = err.msg || "Invalid value.";
                   userFriendlyMessage += `<li>${field}: ${msg}</li>`;
                 });
                 userFriendlyMessage += "</ul>";
-              }
-              // Handle errors where the server provided a simple 'detail' string.
-              else if (
+              } else if (
                 errorResponse.detail &&
                 typeof errorResponse.detail === "string"
               ) {
                 userFriendlyMessage = errorResponse.detail;
-              }
-              // Handle Supabase/PostgREST errors that might use 'message'.
-              else if (errorResponse.message) {
+              } else if (errorResponse.message) {
                 userFriendlyMessage = `Server error: ${errorResponse.message} (status: ${evt.detail.xhr.status})`;
-              }
-              // Fallback for other errors or unexpected JSON structures.
-              else {
+              } else {
                 userFriendlyMessage = `Server error (status: ${evt.detail.xhr.status}). Please try again later.`;
               }
             } catch (e) {
-              // Fallback if the response body wasn't valid JSON.
               console.error(
                 "Failed to parse error response or invalid format:",
                 e
@@ -274,25 +253,20 @@
               userFriendlyMessage = `Server error (status: ${evt.detail.xhr.status}). No error details available.`;
             }
 
-            // Create and display the error message using a Bootstrap alert.
             const alertDiv = document.createElement("div");
             alertDiv.className =
-              "alert alert-danger alert-dismissible fade show"; // Use dismissible alert
+              "alert alert-danger alert-dismissible fade show";
             alertDiv.setAttribute("role", "alert");
             alertDiv.innerHTML = `
                 ${userFriendlyMessage}
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             `;
-            // Clear any previous alerts in the global area before adding the new one.
             while (messageArea.firstChild) {
               messageArea.removeChild(messageArea.firstChild);
             }
-            messageArea.appendChild(alertDiv); // Add the new alert.
+            messageArea.appendChild(alertDiv);
           } else {
-            // Log an error if the designated message area couldn't be found in the DOM.
-            console.error(
-              "Global message area's inner div (#global-message-area .col-lg-8) not found in DOM."
-            );
+            console.error("Global message area's inner div not found in DOM.");
           }
         }
       });
